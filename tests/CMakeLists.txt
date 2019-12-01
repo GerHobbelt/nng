@@ -38,6 +38,7 @@ include_directories(AFTER SYSTEM ${PROJECT_SOURCE_DIR}/src)
 
 # convey.c needs its own link to pthreads.
 if (NOT WIN32)
+    hunter_add_package(pthread-stubs)
     find_package(Threads)
     set(THRLIB Threads::Threads)
 endif()
