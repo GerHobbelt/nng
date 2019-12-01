@@ -92,6 +92,7 @@ set (NNG_SRCS
 )
 
 if (NNG_PLATFORM_POSIX)
+    hunter_add_package(pthread-stubs)
     find_package (Threads REQUIRED)
     list(APPEND NNG_LIBS Threads::Threads)
 

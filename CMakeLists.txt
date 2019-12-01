@@ -25,7 +25,13 @@
 #   IN THE SOFTWARE.
 #
 
-cmake_minimum_required (VERSION 3.1)
+cmake_minimum_required (VERSION 3.2)
+
+include("cmake/HunterGate.cmake")
+HunterGate(
+    URL "https://github.com/ruslo/hunter/archive/v0.23.99.tar.gz"
+    SHA1 "2654422aaeb7ee2228f0a98c01d621eff7b06d59"
+)
 
 project (nng C)
 include (CheckFunctionExists)
