@@ -38,7 +38,6 @@ struct tlstran_pipe {
 	nni_list        sendq;
 	nni_list        recvq;
 	tlstran_ep     *ep;
-	nni_sockaddr    sa;
 	nni_atomic_flag reaped;
 	nni_reap_node   reap;
 	uint8_t         txlen[sizeof(uint64_t)];
@@ -76,7 +75,6 @@ struct tlstran_ep {
 	nni_list             waitpipes; // pipes waiting to match to socket
 	nni_list             negopipes; // pipes busy negotiating
 	const char          *host;
-	nng_sockaddr         src;
 	nng_sockaddr         sa;
 	nni_stat_item        st_rcv_max;
 };
@@ -379,6 +377,20 @@ tlstran_pipe_recv_cb(void *arg)
 		// Make sure the message payload is not too big.  If it is
 		// the caller will shut down the pipe.
 		if ((len > p->rcvmax) && (p->rcvmax > 0)) {
+			nng_sockaddr_storage ss;
+			nng_sockaddr        *sa = (nng_sockaddr *) &ss;
+			char                 peername[64] = "unknown";
+			if ((rv = nng_stream_get_addr(
+			         p->tls, NNG_OPT_REMADDR, sa)) == 0) {
+				(void) nng_str_sockaddr(
+				    sa, peername, sizeof(peername));
+			}
+			nng_log_warn("NNG-RCVMAX",
+			    "Oversize message of %lu bytes (> %lu) "
+			    "on socket<%u> pipe<%u> from TLS %s",
+			    (unsigned long) len, (unsigned long) p->rcvmax,
+			    nni_pipe_sock_id(p->npipe), nni_pipe_id(p->npipe),
+			    peername);
 			rv = NNG_EMSGSIZE;
 			goto recv_error;
 		}

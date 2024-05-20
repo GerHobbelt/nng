@@ -57,8 +57,8 @@ extern "C" {
 // We use SemVer, and these versions are about the API, and
 // may not necessarily match the ABI versions.
 #define NNG_MAJOR_VERSION 1
-#define NNG_MINOR_VERSION 7
-#define NNG_PATCH_VERSION 3
+#define NNG_MINOR_VERSION 8
+#define NNG_PATCH_VERSION 0
 #define NNG_RELEASE_SUFFIX \
 	"" // if non-empty (i.e. "pre"), this is a pre-release
 
@@ -249,6 +249,17 @@ NNG_DECL int nng_socket_get_string(nng_socket, const char *, char **);
 NNG_DECL int nng_socket_get_ptr(nng_socket, const char *, void **);
 NNG_DECL int nng_socket_get_ms(nng_socket, const char *, nng_duration *);
 NNG_DECL int nng_socket_get_addr(nng_socket, const char *, nng_sockaddr *);
+
+// Utility function for getting a printable form of the socket address
+// for display in logs, etc.  It is not intended to be parsed, and the
+// display format may change without notice.  Generally you should alow
+// at least NNG_MAXADDRSTRLEN if you want to avoid typical truncations.
+// It is still possible for very long IPC paths to be truncated, but that
+// is an edge case and applications that pass such long paths should
+// expect some truncation (but they may pass larger values).
+#define NNG_MAXADDRSTRLEN (NNG_MAXADDRLEN + 16) // extra bytes for scheme
+NNG_DECL const char *nng_str_sockaddr(
+    const nng_sockaddr *sa, char *buf, size_t bufsz);
 
 // Arguably the pipe callback functions could be handled as an option,
 // but with the need to specify an argument, we find it best to unify
@@ -1511,11 +1522,11 @@ typedef void (*nng_logger)(nng_log_level level, nng_log_facility facility,
     const char *msgid, const char *msg);
 
 // Discard logger, simply throws logs away.
-extern void nng_null_logger(
+NNG_DECL void nng_null_logger(
     nng_log_level, nng_log_facility, const char *, const char *);
 
 // Very simple, prints formatted messages to stderr.
-extern void nng_stderr_logger(
+NNG_DECL void nng_stderr_logger(
     nng_log_level, nng_log_facility, const char *, const char *);
 
 // Performs an appropriate logging function for the system.  On
@@ -1523,33 +1534,120 @@ extern void nng_stderr_logger(
 // logging may be influenced by other APIs not provided by NNG, such as
 // openlog() for POSIX systems.  This may be nng_stderr_logger on
 // other systems.
-extern void nng_system_logger(
+NNG_DECL void nng_system_logger(
     nng_log_level, nng_log_facility, const char *, const char *);
 
 // Set the default facility to use when logging.  NNG uses NNG_LOG_USER by
 // default.
-extern void nng_log_set_facility(nng_log_facility facility);
+NNG_DECL void nng_log_set_facility(nng_log_facility facility);
 
 // Set the default logging level.  Use NNG_LOG_DEBUG to get everything.
 // Use NNG_LOG_NONE to prevent logging altogether.  Logs that are less
 // severe (numeric level is higher) will be discarded.
-extern void nng_log_set_level(nng_log_level level);
+NNG_DECL void nng_log_set_level(nng_log_level level);
+
+// Get the current logging level.  The intention here os to allow
+// bypassing expensive formatting operations that will be discarded
+// anyway.
+NNG_DECL nng_log_level nng_log_get_level(void);
 
 // Register a logger.
-extern void nng_log_set_logger(nng_logger logger);
+NNG_DECL void nng_log_set_logger(nng_logger logger);
 
 // Log a message.  The msg is formatted using following arguments as per
 // sprintf. The msgid may be NULL.
-extern void nng_log_err(const char *msgid, const char *msg, ...);
-extern void nng_log_warn(const char *msgid, const char *msg, ...);
-extern void nng_log_notice(const char *msgid, const char *msg, ...);
-extern void nng_log_info(const char *msgid, const char *msg, ...);
-extern void nng_log_debug(const char *msgid, const char *msg, ...);
+NNG_DECL void nng_log_err(const char *msgid, const char *msg, ...);
+NNG_DECL void nng_log_warn(const char *msgid, const char *msg, ...);
+NNG_DECL void nng_log_notice(const char *msgid, const char *msg, ...);
+NNG_DECL void nng_log_info(const char *msgid, const char *msg, ...);
+NNG_DECL void nng_log_debug(const char *msgid, const char *msg, ...);
 
 // Log an authentication related message.  These will use the NNG_LOG_AUTH
 // facility.
-extern void nng_log_auth(
+NNG_DECL void nng_log_auth(
     nng_log_level level, const char *msgid, const char *msg, ...);
+
+// Return an absolute time from some arbitrary point.  The value is
+// provided in milliseconds, and is of limited resolution based on the
+// system clock.  (Do not use it for fine-grained performance measurements.)
+NNG_DECL nng_time nng_clock(void);
+
+// Sleep for specified msecs.
+NNG_DECL void nng_msleep(nng_duration);
+
+// nng_random returns a "strong" (cryptographic sense) random number.
+NNG_DECL uint32_t nng_random(void);
+
+// nng_socket_pair is used to create a bound pair of file descriptors
+// typically using the socketpair() call.  The descriptors are backed
+// by reliable, bidirectional, byte streams.  This will return NNG_ENOTSUP
+// if the platform lacks support for this.  The argument is a pointer
+// to an array of file descriptors (or HANDLES or similar).
+NNG_DECL int nng_socket_pair(int[2]);
+
+// Multithreading and synchronization functions.
+
+// nng_thread is a handle to a "thread", which may be a real system
+// thread, or a coroutine on some platforms.
+typedef struct nng_thread nng_thread;
+
+// Create and start a thread.  Note that on some platforms, this might
+// actually be a coroutine, with limitations about what system APIs
+// you can call.  Therefore, these threads should only be used with the
+// I/O APIs provided by nng.  The thread runs until completion.
+NNG_DECL int nng_thread_create(nng_thread **, void (*)(void *), void *);
+
+// Set the thread name.  Support for this is platform specific and varies.
+// It is intended to provide information for use when debugging applications,
+// and not for programmatic use beyond that.
+NNG_DECL void nng_thread_set_name(nng_thread *, const char *);
+
+// Destroy a thread (waiting for it to complete.)  When this function
+// returns all resources for the thread are cleaned up.
+NNG_DECL void nng_thread_destroy(nng_thread *);
+
+// nng_mtx represents a mutex, which is a simple, non-reentrant, boolean lock.
+typedef struct nng_mtx nng_mtx;
+
+// nng_mtx_alloc allocates a mutex structure.
+NNG_DECL int nng_mtx_alloc(nng_mtx **);
+
+// nng_mtx_free frees the mutex.  It must not be locked.
+NNG_DECL void nng_mtx_free(nng_mtx *);
+
+// nng_mtx_lock locks the mutex; if it is already locked it will block
+// until it can be locked.  If the caller already holds the lock, the
+// results are undefined (a panic may occur).
+NNG_DECL void nng_mtx_lock(nng_mtx *);
+
+// nng_mtx_unlock unlocks a previously locked mutex.  It is an error to
+// call this on a mutex which is not owned by caller.
+NNG_DECL void nng_mtx_unlock(nng_mtx *);
+
+// nng_cv is a condition variable.  It is always allocated with an
+// associated mutex, which must be held when waiting for it, or
+// when signaling it.
+typedef struct nng_cv nng_cv;
+
+NNG_DECL int nng_cv_alloc(nng_cv **, nng_mtx *);
+
+// nng_cv_free frees the condition variable.
+NNG_DECL void nng_cv_free(nng_cv *);
+
+// nng_cv_wait waits until the condition variable is "signaled".
+NNG_DECL void nng_cv_wait(nng_cv *);
+
+// nng_cv_until waits until either the condition is signaled, or
+// the timeout expires.  It returns NNG_ETIMEDOUT in that case.
+NNG_DECL int nng_cv_until(nng_cv *, nng_time);
+
+// nng_cv_wake wakes all threads waiting on the condition.
+NNG_DECL void nng_cv_wake(nng_cv *);
+
+// nng_cv_wake1 wakes only one thread waiting on the condition.  This may
+// reduce the thundering herd problem, but care must be taken to ensure
+// that no waiter starves forever.
+NNG_DECL void nng_cv_wake1(nng_cv *);
 
 #ifdef __cplusplus
 }
