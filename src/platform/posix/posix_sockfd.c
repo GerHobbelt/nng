@@ -10,26 +10,30 @@
 //
 
 #include "core/nng_impl.h"
-#include "platform/posix/posix_peerid.h"
+
 #include <errno.h>
-#include <fcntl.h>
 #include <poll.h>
 #include <stdbool.h>
-#include <string.h>
-#include <sys/socket.h>
 #include <sys/uio.h>
-#include <sys/un.h>
+#include <unistd.h>
 
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL 0
-#endif
+#include "core/sockfd.h"
+#include "platform/posix/posix_aio.h"
+#include "platform/posix/posix_peerid.h"
 
-#include "posix_ipc.h"
-
-typedef struct nni_ipc_conn ipc_conn;
+struct nni_sfd_conn {
+	nng_stream     stream;
+	nni_posix_pfd *pfd;
+	int            fd;
+	nni_list       readq;
+	nni_list       writeq;
+	bool           closed;
+	nni_mtx        mtx;
+	nni_reap_node  reap;
+};
 
 static void
-ipc_dowrite(ipc_conn *c)
+sfd_dowrite(nni_sfd_conn *c)
 {
 	nni_aio *aio;
 	int      fd;
@@ -39,15 +43,13 @@ ipc_dowrite(ipc_conn *c)
 	}
 
 	while ((aio = nni_list_first(&c->writeq)) != NULL) {
-		unsigned      i;
-		int           n;
-		int           niov;
-		unsigned      naiov;
-		nni_iov      *aiov;
-		struct msghdr hdr;
-		struct iovec  iovec[16];
+		unsigned     i;
+		int          n;
+		int          niov;
+		unsigned     naiov;
+		nni_iov     *aiov;
+		struct iovec iovec[16];
 
-		memset(&hdr, 0, sizeof(hdr));
 		nni_aio_get_iov(aio, &naiov, &aiov);
 
 		if (naiov > NNI_NUM_ELEMENTS(iovec)) {
@@ -64,10 +66,7 @@ ipc_dowrite(ipc_conn *c)
 			}
 		}
 
-		hdr.msg_iovlen = niov;
-		hdr.msg_iov    = iovec;
-
-		if ((n = sendmsg(fd, &hdr, MSG_NOSIGNAL)) < 0) {
+		if ((n = writev(fd, iovec, niov)) < 0) {
 			switch (errno) {
 			case EINTR:
 				continue;
@@ -86,9 +85,10 @@ ipc_dowrite(ipc_conn *c)
 			}
 		}
 
+		// If we didn't send all the data, the caller will
+		// resubmit.  As a corollary, callers should probably
+		// only have one message on the write queue at a time.
 		nni_aio_bump_count(aio, n);
-		// We completed the entire operation on this aio.
-		// (Sendmsg never returns a partial result.)
 		nni_aio_list_remove(aio);
 		nni_aio_finish(aio, 0, nni_aio_count(aio));
 
@@ -98,7 +98,7 @@ ipc_dowrite(ipc_conn *c)
 }
 
 static void
-ipc_doread(ipc_conn *c)
+sfd_doread(nni_sfd_conn *c)
 {
 	nni_aio *aio;
 	int      fd;
@@ -163,10 +163,10 @@ ipc_doread(ipc_conn *c)
 }
 
 static void
-ipc_error(void *arg, int err)
+sfd_error(void *arg, int err)
 {
-	ipc_conn *c = arg;
-	nni_aio  *aio;
+	nni_sfd_conn *c = arg;
+	nni_aio      *aio;
 
 	nni_mtx_lock(&c->mtx);
 	while (((aio = nni_list_first(&c->readq)) != NULL) ||
@@ -174,14 +174,16 @@ ipc_error(void *arg, int err)
 		nni_aio_list_remove(aio);
 		nni_aio_finish_error(aio, err);
 	}
-	nni_posix_pfd_close(c->pfd);
+	if (c->pfd != NULL) {
+		nni_posix_pfd_close(c->pfd);
+	}
 	nni_mtx_unlock(&c->mtx);
 }
 
 static void
-ipc_close(void *arg)
+sfd_close(void *arg)
 {
-	ipc_conn *c = arg;
+	nni_sfd_conn *c = arg;
 	nni_mtx_lock(&c->mtx);
 	if (!c->closed) {
 		nni_aio *aio;
@@ -198,21 +200,47 @@ ipc_close(void *arg)
 	nni_mtx_unlock(&c->mtx);
 }
 
+// sfd_fini may block briefly waiting for the pollq thread.
+// To get that out of our context, we simply reap this.
 static void
-ipc_cb(nni_posix_pfd *pfd, unsigned events, void *arg)
+sfd_fini(void *arg)
 {
-	ipc_conn *c = arg;
+	nni_sfd_conn *c = arg;
+	sfd_close(c);
+	if (c->pfd != NULL) {
+		nni_posix_pfd_fini(c->pfd);
+	}
+	nni_mtx_fini(&c->mtx);
+
+	NNI_FREE_STRUCT(c);
+}
+
+static nni_reap_list sfd_reap_list = {
+	.rl_offset = offsetof(nni_sfd_conn, reap),
+	.rl_func   = sfd_fini,
+};
+static void
+sfd_free(void *arg)
+{
+	struct nni_sfd_conn *c = arg;
+	nni_reap(&sfd_reap_list, c);
+}
+
+static void
+sfd_cb(nni_posix_pfd *pfd, unsigned events, void *arg)
+{
+	struct nni_sfd_conn *c = arg;
 
 	if (events & (NNI_POLL_HUP | NNI_POLL_ERR | NNI_POLL_INVAL)) {
-		ipc_error(c, NNG_ECONNSHUT);
+		sfd_error(c, NNG_ECONNSHUT);
 		return;
 	}
 	nni_mtx_lock(&c->mtx);
 	if ((events & NNI_POLL_IN) != 0) {
-		ipc_doread(c);
+		sfd_doread(c);
 	}
 	if ((events & NNI_POLL_OUT) != 0) {
-		ipc_dowrite(c);
+		sfd_dowrite(c);
 	}
 	events = 0;
 	if (!nni_list_empty(&c->writeq)) {
@@ -228,9 +256,9 @@ ipc_cb(nni_posix_pfd *pfd, unsigned events, void *arg)
 }
 
 static void
-ipc_cancel(nni_aio *aio, void *arg, int rv)
+sfd_cancel(nni_aio *aio, void *arg, int rv)
 {
-	ipc_conn *c = arg;
+	nni_sfd_conn *c = arg;
 
 	nni_mtx_lock(&c->mtx);
 	if (nni_aio_list_active(aio)) {
@@ -241,17 +269,17 @@ ipc_cancel(nni_aio *aio, void *arg, int rv)
 }
 
 static void
-ipc_send(void *arg, nni_aio *aio)
+sfd_send(void *arg, nni_aio *aio)
 {
-	ipc_conn *c = arg;
-	int       rv;
+	nni_sfd_conn *c = arg;
+	int           rv;
 
 	if (nni_aio_begin(aio) != 0) {
 		return;
 	}
 	nni_mtx_lock(&c->mtx);
 
-	if ((rv = nni_aio_schedule(aio, ipc_cancel, c)) != 0) {
+	if ((rv = nni_aio_schedule(aio, sfd_cancel, c)) != 0) {
 		nni_mtx_unlock(&c->mtx);
 		nni_aio_finish_error(aio, rv);
 		return;
@@ -259,7 +287,7 @@ ipc_send(void *arg, nni_aio *aio)
 	nni_aio_list_append(&c->writeq, aio);
 
 	if (nni_list_first(&c->writeq) == aio) {
-		ipc_dowrite(c);
+		sfd_dowrite(c);
 		// If we are still the first thing on the list, that
 		// means we didn't finish the job, so arm the poller to
 		// complete us.
@@ -271,17 +299,17 @@ ipc_send(void *arg, nni_aio *aio)
 }
 
 static void
-ipc_recv(void *arg, nni_aio *aio)
+sfd_recv(void *arg, nni_aio *aio)
 {
-	ipc_conn *c = arg;
-	int       rv;
+	nni_sfd_conn *c = arg;
+	int           rv;
 
 	if (nni_aio_begin(aio) != 0) {
 		return;
 	}
 	nni_mtx_lock(&c->mtx);
 
-	if ((rv = nni_aio_schedule(aio, ipc_cancel, c)) != 0) {
+	if ((rv = nni_aio_schedule(aio, sfd_cancel, c)) != 0) {
 		nni_mtx_unlock(&c->mtx);
 		nni_aio_finish_error(aio, rv);
 		return;
@@ -293,7 +321,7 @@ ipc_recv(void *arg, nni_aio *aio)
 	// many cases.  We also need not arm a list if it was already
 	// armed.
 	if (nni_list_first(&c->readq) == aio) {
-		ipc_doread(c);
+		sfd_doread(c);
 		// If we are still the first thing on the list, that
 		// means we didn't finish the job, so arm the poller to
 		// complete us.
@@ -305,45 +333,54 @@ ipc_recv(void *arg, nni_aio *aio)
 }
 
 static int
-ipc_get_peer_uid(void *arg, void *buf, size_t *szp, nni_type t)
+sfd_get_addr(void *arg, void *buf, size_t *szp, nni_type t)
 {
-	ipc_conn *c = arg;
-	int       rv;
-	uint64_t  ignore;
-	uint64_t  id = 0;
+	NNI_ARG_UNUSED(arg);
+	nng_sockaddr sa;
+	sa.s_family = NNG_AF_UNSPEC;
+	return (nni_copyout_sockaddr(&sa, buf, szp, t));
+}
 
-	if ((rv = nni_posix_peerid(nni_posix_pfd_fd(c->pfd), &id, &ignore,
-	         &ignore, &ignore)) != 0) {
+static int
+sfd_get_peer_uid(void *arg, void *buf, size_t *szp, nni_type t)
+{
+	nni_sfd_conn *c = arg;
+	int           rv;
+	uint64_t      ignore;
+	uint64_t      id = 0;
+
+	rv = nni_posix_peerid(c->fd, &id, &ignore, &ignore, &ignore);
+	if (rv != 0) {
 		return (rv);
 	}
 	return (nni_copyout_u64(id, buf, szp, t));
 }
 
 static int
-ipc_get_peer_gid(void *arg, void *buf, size_t *szp, nni_type t)
+sfd_get_peer_gid(void *arg, void *buf, size_t *szp, nni_type t)
 {
-	ipc_conn *c = arg;
-	int       rv;
-	uint64_t  ignore;
-	uint64_t  id = 0;
+	nni_sfd_conn *c = arg;
+	int           rv;
+	uint64_t      ignore;
+	uint64_t      id = 0;
 
-	if ((rv = nni_posix_peerid(nni_posix_pfd_fd(c->pfd), &ignore, &id,
-	         &ignore, &ignore)) != 0) {
+	rv = nni_posix_peerid(c->fd, &ignore, &id, &ignore, &ignore);
+	if (rv != 0) {
 		return (rv);
 	}
 	return (nni_copyout_u64(id, buf, szp, t));
 }
 
 static int
-ipc_get_peer_zoneid(void *arg, void *buf, size_t *szp, nni_type t)
+sfd_get_peer_zoneid(void *arg, void *buf, size_t *szp, nni_type t)
 {
-	ipc_conn *c = arg;
-	int       rv;
-	uint64_t  ignore;
-	uint64_t  id = 0;
+	nni_sfd_conn *c = arg;
+	int           rv;
+	uint64_t      ignore;
+	uint64_t      id = 0;
 
-	if ((rv = nni_posix_peerid(nni_posix_pfd_fd(c->pfd), &ignore, &ignore,
-	         &ignore, &id)) != 0) {
+	rv = nni_posix_peerid(c->fd, &ignore, &ignore, &ignore, &id);
+	if (rv != 0) {
 		return (rv);
 	}
 	if (id == (uint64_t) -1) {
@@ -354,15 +391,15 @@ ipc_get_peer_zoneid(void *arg, void *buf, size_t *szp, nni_type t)
 }
 
 static int
-ipc_get_peer_pid(void *arg, void *buf, size_t *szp, nni_type t)
+sfd_get_peer_pid(void *arg, void *buf, size_t *szp, nni_type t)
 {
-	ipc_conn *c = arg;
-	int       rv;
-	uint64_t  ignore;
-	uint64_t  id = 0;
+	nni_sfd_conn *c = arg;
+	int           rv;
+	uint64_t      ignore;
+	uint64_t      id = 0;
 
-	if ((rv = nni_posix_peerid(nni_posix_pfd_fd(c->pfd), &ignore, &ignore,
-	         &id, &ignore)) != 0) {
+	rv = nni_posix_peerid(c->fd, &ignore, &ignore, &id, &ignore);
+	if (rv != 0) {
 		return (rv);
 	}
 	if (id == (uint64_t) -1) {
@@ -372,71 +409,30 @@ ipc_get_peer_pid(void *arg, void *buf, size_t *szp, nni_type t)
 	return (nni_copyout_u64(id, buf, szp, t));
 }
 
-static int
-ipc_get_addr(void *arg, void *buf, size_t *szp, nni_type t)
-{
-	ipc_conn *c = arg;
-	return (nni_copyout_sockaddr(&c->sa, buf, szp, t));
-}
-
-void
-nni_posix_ipc_start(nni_ipc_conn *c)
-{
-	nni_posix_pfd_set_cb(c->pfd, ipc_cb, c);
-}
-
-static void
-ipc_reap(void *arg)
-{
-	ipc_conn *c = arg;
-	ipc_close(c);
-	if (c->pfd != NULL) {
-		nni_posix_pfd_fini(c->pfd);
-	}
-	nni_mtx_fini(&c->mtx);
-
-	if (c->dialer != NULL) {
-		nni_posix_ipc_dialer_rele(c->dialer);
-	}
-
-	NNI_FREE_STRUCT(c);
-}
-
-static nni_reap_list ipc_reap_list = {
-	.rl_offset = offsetof(ipc_conn, reap),
-	.rl_func   = ipc_reap,
-};
-static void
-ipc_free(void *arg)
-{
-	ipc_conn *c = arg;
-	nni_reap(&ipc_reap_list, c);
-}
-
-static const nni_option ipc_options[] = {
+static const nni_option sfd_options[] = {
 	{
 	    .o_name = NNG_OPT_LOCADDR,
-	    .o_get  = ipc_get_addr,
+	    .o_get  = sfd_get_addr,
 	},
 	{
 	    .o_name = NNG_OPT_REMADDR,
-	    .o_get  = ipc_get_addr,
+	    .o_get  = sfd_get_addr,
 	},
 	{
-	    .o_name = NNG_OPT_IPC_PEER_PID,
-	    .o_get  = ipc_get_peer_pid,
+	    .o_name = NNG_OPT_PEER_PID,
+	    .o_get  = sfd_get_peer_pid,
 	},
 	{
-	    .o_name = NNG_OPT_IPC_PEER_UID,
-	    .o_get  = ipc_get_peer_uid,
+	    .o_name = NNG_OPT_PEER_UID,
+	    .o_get  = sfd_get_peer_uid,
 	},
 	{
-	    .o_name = NNG_OPT_IPC_PEER_GID,
-	    .o_get  = ipc_get_peer_gid,
+	    .o_name = NNG_OPT_PEER_GID,
+	    .o_get  = sfd_get_peer_gid,
 	},
 	{
-	    .o_name = NNG_OPT_IPC_PEER_ZONEID,
-	    .o_get  = ipc_get_peer_zoneid,
+	    .o_name = NNG_OPT_PEER_ZONEID,
+	    .o_get  = sfd_get_peer_zoneid,
 	},
 	{
 	    .o_name = NULL,
@@ -444,48 +440,54 @@ static const nni_option ipc_options[] = {
 };
 
 static int
-ipc_get(void *arg, const char *name, void *val, size_t *szp, nni_type t)
+sfd_get(void *arg, const char *name, void *buf, size_t *szp, nni_type t)
 {
-	ipc_conn *c = arg;
-	return (nni_getopt(ipc_options, name, c, val, szp, t));
+	nni_sfd_conn *c = arg;
+	return (nni_getopt(sfd_options, name, c, buf, szp, t));
 }
 
 static int
-ipc_set(void *arg, const char *name, const void *val, size_t sz, nni_type t)
+sfd_set(void *arg, const char *name, const void *buf, size_t sz, nni_type t)
 {
-	ipc_conn *c = arg;
-	return (nni_setopt(ipc_options, name, c, val, sz, t));
+	nni_sfd_conn *c = arg;
+	return (nni_setopt(sfd_options, name, c, buf, sz, t));
 }
 
 int
-nni_posix_ipc_alloc(nni_ipc_conn **cp, nni_sockaddr *sa, nni_ipc_dialer *d)
+nni_sfd_conn_alloc(nni_sfd_conn **cp, int fd)
 {
-	ipc_conn *c;
-
+	nni_sfd_conn *c;
+	int           rv;
 	if ((c = NNI_ALLOC_STRUCT(c)) == NULL) {
 		return (NNG_ENOMEM);
 	}
+	if ((rv = nni_posix_pfd_init(&c->pfd, fd)) != 0) {
+		NNI_FREE_STRUCT(c);
+		return (rv);
+	}
 
-	c->closed         = false;
-	c->dialer         = d;
-	c->stream.s_free  = ipc_free;
-	c->stream.s_close = ipc_close;
-	c->stream.s_send  = ipc_send;
-	c->stream.s_recv  = ipc_recv;
-	c->stream.s_get   = ipc_get;
-	c->stream.s_set   = ipc_set;
-	c->sa             = *sa;
+	c->closed = false;
+	c->fd     = fd;
 
 	nni_mtx_init(&c->mtx);
 	nni_aio_list_init(&c->readq);
 	nni_aio_list_init(&c->writeq);
+
+	c->stream.s_free  = sfd_free;
+	c->stream.s_close = sfd_close;
+	c->stream.s_recv  = sfd_recv;
+	c->stream.s_send  = sfd_send;
+	c->stream.s_get   = sfd_get;
+	c->stream.s_set   = sfd_set;
+
+	nni_posix_pfd_set_cb(c->pfd, sfd_cb, c);
 
 	*cp = c;
 	return (0);
 }
 
 void
-nni_posix_ipc_init(nni_ipc_conn *c, nni_posix_pfd *pfd)
+nni_sfd_close_fd(int fd)
 {
-	c->pfd = pfd;
+	close(fd);
 }
