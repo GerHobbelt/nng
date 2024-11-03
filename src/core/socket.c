@@ -114,19 +114,19 @@ static void nni_ctx_destroy(nni_ctx *);
 #define SOCK(s) ((nni_sock *) (s))
 
 static int
-sock_get_fd(void *s, unsigned flag, int *fdp)
+sock_get_fd(nni_sock *s, unsigned flag, int *fdp)
 {
 	int           rv;
 	nni_pollable *p;
 
-	if ((flag & nni_sock_flags(SOCK(s))) == 0) {
+	if ((flag & nni_sock_flags(s)) == 0) {
 		return (NNG_ENOTSUP);
 	}
 
 	if (flag == NNI_PROTO_FLAG_SND) {
-		rv = nni_msgq_get_sendable(SOCK(s)->s_uwq, &p);
+		rv = nni_msgq_get_sendable(s->s_uwq, &p);
 	} else {
-		rv = nni_msgq_get_recvable(SOCK(s)->s_urq, &p);
+		rv = nni_msgq_get_recvable(s->s_urq, &p);
 	}
 
 	if (rv == 0) {
@@ -134,37 +134,6 @@ sock_get_fd(void *s, unsigned flag, int *fdp)
 	}
 
 	return (rv);
-}
-
-static int
-sock_get_sendfd(void *s, void *buf, size_t *szp, nni_type t)
-{
-	int fd;
-	int rv;
-
-	if ((rv = sock_get_fd(SOCK(s), NNI_PROTO_FLAG_SND, &fd)) != 0) {
-		return (rv);
-	}
-	return (nni_copyout_int(fd, buf, szp, t));
-}
-
-static int
-sock_get_recvfd(void *s, void *buf, size_t *szp, nni_type t)
-{
-	int fd;
-	int rv;
-
-	if ((rv = sock_get_fd(SOCK(s), NNI_PROTO_FLAG_RCV, &fd)) != 0) {
-		return (rv);
-	}
-	return (nni_copyout_int(fd, buf, szp, t));
-}
-
-static int
-sock_get_raw(void *s, void *buf, size_t *szp, nni_type t)
-{
-	bool raw = ((nni_sock_flags(SOCK(s)) & NNI_PROTO_FLAG_RAW) != 0);
-	return (nni_copyout_bool(raw, buf, szp, t));
 }
 
 static int
@@ -241,38 +210,15 @@ static int
 sock_set_sockname(void *s, const void *buf, size_t sz, nni_type t)
 {
 	int rv;
-	rv = (nni_copyin_str(
-	    SOCK(s)->s_name, buf, sizeof(SOCK(s)->s_name), sz, t));
+	NNI_ARG_UNUSED(sz);
+	rv =
+	    (nni_copyin_str(SOCK(s)->s_name, buf, sizeof(SOCK(s)->s_name), t));
 #ifdef NNG_ENABLE_STATS
 	if (rv == 0) {
 		nni_stat_set_string(&SOCK(s)->st_name, SOCK(s)->s_name);
 	}
 #endif
 	return (rv);
-}
-
-static int
-sock_get_proto(void *s, void *buf, size_t *szp, nni_type t)
-{
-	return (nni_copyout_int(nni_sock_proto_id(SOCK(s)), buf, szp, t));
-}
-
-static int
-sock_get_peer(void *s, void *buf, size_t *szp, nni_type t)
-{
-	return (nni_copyout_int(nni_sock_peer_id(SOCK(s)), buf, szp, t));
-}
-
-static int
-sock_get_protoname(void *s, void *buf, size_t *szp, nni_type t)
-{
-	return (nni_copyout_str(nni_sock_proto_name(SOCK(s)), buf, szp, t));
-}
-
-static int
-sock_get_peername(void *s, void *buf, size_t *szp, nni_type t)
-{
-	return (nni_copyout_str(nni_sock_peer_name(SOCK(s)), buf, szp, t));
 }
 
 static const nni_option sock_options[] = {
@@ -285,14 +231,6 @@ static const nni_option sock_options[] = {
 	    .o_name = NNG_OPT_SENDTIMEO,
 	    .o_get  = sock_get_sendtimeo,
 	    .o_set  = sock_set_sendtimeo,
-	},
-	{
-	    .o_name = NNG_OPT_RECVFD,
-	    .o_get  = sock_get_recvfd,
-	},
-	{
-	    .o_name = NNG_OPT_SENDFD,
-	    .o_get  = sock_get_sendfd,
 	},
 	{
 	    .o_name = NNG_OPT_RECVBUF,
@@ -308,26 +246,6 @@ static const nni_option sock_options[] = {
 	    .o_name = NNG_OPT_SOCKNAME,
 	    .o_get  = sock_get_sockname,
 	    .o_set  = sock_set_sockname,
-	},
-	{
-	    .o_name = NNG_OPT_RAW,
-	    .o_get  = sock_get_raw,
-	},
-	{
-	    .o_name = NNG_OPT_PROTO,
-	    .o_get  = sock_get_proto,
-	},
-	{
-	    .o_name = NNG_OPT_PEER,
-	    .o_get  = sock_get_peer,
-	},
-	{
-	    .o_name = NNG_OPT_PROTONAME,
-	    .o_get  = sock_get_protoname,
-	},
-	{
-	    .o_name = NNG_OPT_PEERNAME,
-	    .o_get  = sock_get_peername,
 	},
 	// terminate list
 	{
@@ -351,6 +269,24 @@ uint32_t
 nni_sock_id(nni_sock *s)
 {
 	return (s->s_id);
+}
+
+int
+nni_sock_get_send_fd(nni_sock *s, int *fdp)
+{
+	if (s->s_sock_ops.sock_send_poll_fd != NULL) {
+		return (s->s_sock_ops.sock_send_poll_fd(s->s_data, fdp));
+	}
+	return (sock_get_fd(s, NNI_PROTO_FLAG_SND, fdp));
+}
+
+int
+nni_sock_get_recv_fd(nni_sock *s, int *fdp)
+{
+	if (s->s_sock_ops.sock_recv_poll_fd != NULL) {
+		return (s->s_sock_ops.sock_recv_poll_fd(s->s_data, fdp));
+	}
+	return (sock_get_fd(s, NNI_PROTO_FLAG_RCV, fdp));
 }
 
 // nni_sock_sendq and nni_sock_recvq are called by the protocol to obtain
@@ -877,10 +813,28 @@ nni_sock_peer_name(nni_sock *sock)
 	return (sock->s_peer_id.p_name);
 }
 
+bool
+nni_sock_raw(nni_sock *sock)
+{
+	return ((nni_sock_flags(sock) & NNI_PROTO_FLAG_RAW) != 0);
+}
+
 struct nni_proto_pipe_ops *
 nni_sock_proto_pipe_ops(nni_sock *sock)
 {
 	return (&sock->s_pipe_ops);
+}
+
+struct nni_proto_sock_ops *
+nni_sock_proto_ops(nni_sock *sock)
+{
+	return (&sock->s_sock_ops);
+}
+
+struct nni_proto_ctx_ops *
+nni_ctx_proto_ops(nni_ctx *ctx)
+{
+	return (&ctx->c_ops);
 }
 
 void *
@@ -1032,7 +986,8 @@ nni_sock_setopt(
 		}
 
 	} else if (strcmp(name, NNG_OPT_RECVMAXSZ) == 0) {
-		if ((rv = nni_copyin_size(NULL, v, sz, 0, NNI_MAXSZ, t)) !=
+		size_t scratch;
+		if ((rv = nni_copyin_size(&scratch, v, sz, 0, NNI_MAXSZ, t)) !=
 		    0) {
 			return (rv);
 		}
@@ -1124,17 +1079,9 @@ nni_sock_getopt(
 		if (strcmp(sopt->name, name) == 0) {
 			size_t sz = sopt->sz;
 
-			if ((sopt->typ != NNI_TYPE_OPAQUE) &&
-			    (t != sopt->typ)) {
-
-				if (t != NNI_TYPE_OPAQUE) {
-					nni_mtx_unlock(&s->s_mx);
-					return (NNG_EBADTYPE);
-				}
-				if (*szp != sopt->sz) {
-					nni_mtx_unlock(&s->s_mx);
-					return (NNG_EINVAL);
-				}
+			if (t != sopt->typ) {
+				nni_mtx_unlock(&s->s_mx);
+				return (NNG_EBADTYPE);
 			}
 
 			if (szp != NULL) {
@@ -1199,6 +1146,12 @@ nni_ctx_find(nni_ctx **cp, uint32_t id, bool closing)
 	nni_mtx_unlock(&sock_lk);
 
 	return (rv);
+}
+
+void *
+nni_ctx_proto_data(nni_ctx *ctx)
+{
+	return (ctx->c_data);
 }
 
 static void

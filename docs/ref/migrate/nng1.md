@@ -33,6 +33,15 @@ The `NNG_OPT_WSS_REQUEST_HEADERS` and `NNG_OPT_WSS_RESPONSE_HEADERS` aliases for
 Just convert any use of them to `NNG_OPT_WS_REQUEST_HEADERS` or
 `NNG_OPT_WS_RESPONSE_HEADERS` as appropriate.
 
+## TLS Options
+
+The support for configuring TLS via `NNG_TLS_AUTH_MODE`, `NNG_OPT_TLS_CA_FILE`, `NNG_OPT_TLS_SERVER_NAME`,
+and similar has been removed. Instead configuration must be performed by allocating
+a `nng_tls_config` object, and then setting fields on it using the appropriate functions,
+after which it may be configured on a listener or dialer using the `NNG_OPT_TLS_CONFIG` option.
+
+Note that TLS configuration is now available in `<nng/nng.h>`, rather than the supplemental header.
+
 ## Option Functions
 
 The previously deprecated `nng_pipe_getopt_xxx` family of functions is removed.
@@ -41,6 +50,38 @@ Applications should use `nng_pipe_get` and related functions instead.
 The socket option function families for `nng_getopt` and `nng_setopt` have been removed as well.
 In this case, use the `nng_socket_get` and `nng_socket_set` functions as appropriate.
 
+The `_getopt` and `_setopt` functions for contexts, listeners, and dialers are no longer
+present. Simply changing `_getopt` to `_get` or `_setopt` to `_set` in the function name
+should be sufficient in most cases.
+
+## Untyped Option Functions Removed
+
+The following functions are removed. To access options, use a proper typed access function,
+such as one ending in a suffix like `_bool` (to access a `bool` typed option).
+
+- `nng_ctx_get`
+- `nng_ctx_set`
+- `nng_dialer_get`
+- `nng_dialer_set`
+- `nng_listener_get`
+- `nng_listener_set`
+- `nng_pipe_get`
+- `nng_socket_get`
+- `nng_socket_set`
+- `nng_stream_get`
+- `nng_stream_set`
+- `nng_stream_dialer_get`
+- `nng_stream_dialer_set`
+- `nng_stream_listener_get`
+- `nng_stream_listener_set`
+
+## Stream Options
+
+The ability to set options on streams after they have been created is no longer present.
+(It turns out that this was not very useful.) All functions `nng_stream_set_xxx` are removed.
+For tuning the `NNG_OPT_TCP_NODELAY` or similar properties, set the option on the listener
+or dialer that creates the stream instead.
+
 ## Transport Options
 
 A number of transport options can no longer be set on the socket. Instead these
@@ -48,6 +89,24 @@ options must be set on the endpoint (dialer or listener) using the appropriate
 `nng_dialer_set` or `nng_listener_set` option. This likely means that it is necessary
 to allocate and configure the endpoint before attaching it to the socket. This will
 also afford a much more fine-grained level of control over transport options.
+
+## Socket Options
+
+The `NNG_OPT_PROTO`, `NNG_OPT_PROTONAME`, `NNG_OPT_PEER`, and `NNG_OPT_PEERNAME` options
+have been replaced by functions instead of options.
+Use `nng_socket_proto_id`, `nng_socket_peer_id`, `nng_socket_proto_name`, and `nng_socket_peer_name` instead.
+Note that the new functions provide a reference to a static string, and thus do not require
+allocation, and the returned strings should not be freed. Also the IDs are provided as `uint16_t`,
+matching the actual wire protocol values, instead of `int`.
+
+The `NNG_OPT_RAW` option has aso been replaced by a function, `nng_socket_raw`.
+
+## Subscriptions
+
+The `NNG_OPT_SUB_SUBSCRIBE` and `NNG_OPT_SUB_UNSUBCRIBE` options have been replaced by
+the following functions: `nng_sub0_socket_subscribe`, `nng_sub0_socket_unsubscribe`,
+`nng_sub0_ctx_subscribe` and `nng_sub0_ctx_unsubscribe`. These functions, like the options
+they replace, are only applicable to SUB sockets.
 
 ## Statistics Use Constified Pointers
 

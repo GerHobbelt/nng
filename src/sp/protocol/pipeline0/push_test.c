@@ -7,26 +7,25 @@
 // found online at https://opensource.org/licenses/MIT.
 //
 
+#include "nng/nng.h"
 #include <nuts.h>
 
 static void
 test_push_identity(void)
 {
-	nng_socket s;
-	int        p;
-	char      *n;
+	nng_socket  s;
+	uint16_t    p;
+	const char *n;
 
 	NUTS_PASS(nng_push0_open(&s));
-	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_PROTO, &p));
+	NUTS_PASS(nng_socket_proto_id(s, &p));
 	NUTS_TRUE(p == NUTS_PROTO(5u, 0u)); // 80
-	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_PEER, &p));
+	NUTS_PASS(nng_socket_peer_id(s, &p));
 	NUTS_TRUE(p == NUTS_PROTO(5u, 1u)); // 81
-	NUTS_PASS(nng_socket_get_string(s, NNG_OPT_PROTONAME, &n));
+	NUTS_PASS(nng_socket_proto_name(s, &n));
 	NUTS_MATCH(n, "push");
-	nng_strfree(n);
-	NUTS_PASS(nng_socket_get_string(s, NNG_OPT_PEERNAME, &n));
+	NUTS_PASS(nng_socket_peer_name(s, &n));
 	NUTS_MATCH(n, "pull");
-	nng_strfree(n);
 	NUTS_CLOSE(s);
 }
 
@@ -59,7 +58,7 @@ test_push_not_readable(void)
 	nng_socket s;
 
 	NUTS_PASS(nng_push0_open(&s));
-	NUTS_FAIL(nng_socket_get_int(s, NNG_OPT_RECVFD, &fd), NNG_ENOTSUP);
+	NUTS_FAIL(nng_socket_get_recv_poll_fd(s, &fd), NNG_ENOTSUP);
 	NUTS_CLOSE(s);
 }
 
@@ -74,7 +73,7 @@ test_push_poll_writable(void)
 	NUTS_PASS(nng_push0_open(&push));
 	NUTS_PASS(nng_socket_set_ms(pull, NNG_OPT_RECVTIMEO, 1000));
 	NUTS_PASS(nng_socket_set_ms(push, NNG_OPT_SENDTIMEO, 1000));
-	NUTS_PASS(nng_socket_get_int(push, NNG_OPT_SENDFD, &fd));
+	NUTS_PASS(nng_socket_get_send_poll_fd(push, &fd));
 	NUTS_TRUE(fd >= 0);
 
 	// This tests unbuffered sockets for now.
@@ -118,7 +117,7 @@ test_push_poll_buffered(void)
 	NUTS_PASS(nng_socket_set_ms(pull, NNG_OPT_RECVTIMEO, 1000));
 	NUTS_PASS(nng_socket_set_ms(push, NNG_OPT_SENDTIMEO, 1000));
 	NUTS_PASS(nng_socket_set_int(push, NNG_OPT_SENDBUF, 2));
-	NUTS_PASS(nng_socket_get_int(push, NNG_OPT_SENDFD, &fd));
+	NUTS_PASS(nng_socket_get_send_poll_fd(push, &fd));
 	NUTS_TRUE(fd >= 0);
 
 	// We can write two message while unbuffered.
@@ -168,7 +167,7 @@ test_push_poll_truncate(void)
 	NUTS_PASS(nng_socket_set_ms(pull, NNG_OPT_RECVTIMEO, 1000));
 	NUTS_PASS(nng_socket_set_ms(push, NNG_OPT_SENDTIMEO, 1000));
 	NUTS_PASS(nng_socket_set_int(push, NNG_OPT_SENDBUF, 3));
-	NUTS_PASS(nng_socket_get_int(push, NNG_OPT_SENDFD, &fd));
+	NUTS_PASS(nng_socket_get_send_poll_fd(push, &fd));
 	NUTS_TRUE(fd >= 0);
 
 	// We can write two message while unbuffered.
@@ -411,7 +410,7 @@ test_push_cooked(void)
 	bool       b;
 
 	NUTS_PASS(nng_push0_open(&s));
-	NUTS_PASS(nng_socket_get_bool(s, NNG_OPT_RAW, &b));
+	NUTS_PASS(nng_socket_raw(s, &b));
 	NUTS_TRUE(!b);
 	NUTS_CLOSE(s);
 }
@@ -482,19 +481,15 @@ test_push_send_buffer(void)
 	nng_socket s;
 	int        v;
 	bool       b;
-	size_t     sz;
 
 	NUTS_PASS(nng_push0_open(&s));
 	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_SENDBUF, &v));
 	NUTS_TRUE(v == 0);
 	NUTS_FAIL(nng_socket_get_bool(s, NNG_OPT_SENDBUF, &b), NNG_EBADTYPE);
-	sz = 1;
-	NUTS_FAIL(nng_socket_get(s, NNG_OPT_SENDBUF, &b, &sz), NNG_EINVAL);
 	NUTS_FAIL(nng_socket_set_int(s, NNG_OPT_SENDBUF, -1), NNG_EINVAL);
 	NUTS_FAIL(nng_socket_set_int(s, NNG_OPT_SENDBUF, 100000), NNG_EINVAL);
 	NUTS_FAIL(
 	    nng_socket_set_bool(s, NNG_OPT_SENDBUF, false), NNG_EBADTYPE);
-	NUTS_FAIL(nng_socket_set(s, NNG_OPT_SENDBUF, &b, 1), NNG_EINVAL);
 	NUTS_PASS(nng_socket_set_int(s, NNG_OPT_SENDBUF, 100));
 	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_SENDBUF, &v));
 	NUTS_TRUE(v == 100);

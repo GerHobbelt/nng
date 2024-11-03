@@ -13,23 +13,21 @@
 static void
 test_rep_identity(void)
 {
-	nng_socket s;
-	int        p1, p2;
-	char      *n1;
-	char      *n2;
+	nng_socket  s;
+	uint16_t    p1, p2;
+	const char *n1;
+	const char *n2;
 
 	NUTS_PASS(nng_rep0_open(&s));
-	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_PROTO, &p1));
-	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_PEER, &p2));
-	NUTS_PASS(nng_socket_get_string(s, NNG_OPT_PROTONAME, &n1));
-	NUTS_PASS(nng_socket_get_string(s, NNG_OPT_PEERNAME, &n2));
+	NUTS_PASS(nng_socket_proto_id(s, &p1));
+	NUTS_PASS(nng_socket_peer_id(s, &p2));
+	NUTS_PASS(nng_socket_proto_name(s, &n1));
+	NUTS_PASS(nng_socket_peer_name(s, &n2));
 	NUTS_CLOSE(s);
 	NUTS_TRUE(p1 == NNG_REP0_SELF);
 	NUTS_TRUE(p2 == NNG_REP0_PEER);
 	NUTS_MATCH(n1, NNG_REP0_SELF_NAME);
 	NUTS_MATCH(n2, NNG_REP0_PEER_NAME);
-	nng_strfree(n1);
-	nng_strfree(n2);
 }
 
 void
@@ -54,7 +52,7 @@ test_rep_poll_writeable(void)
 
 	NUTS_PASS(nng_req0_open(&req));
 	NUTS_PASS(nng_rep0_open(&rep));
-	NUTS_PASS(nng_socket_get_int(rep, NNG_OPT_SENDFD, &fd));
+	NUTS_PASS(nng_socket_get_send_poll_fd(rep, &fd));
 	NUTS_TRUE(fd >= 0);
 
 	// Not writable before connect.
@@ -91,7 +89,7 @@ test_rep_poll_readable(void)
 
 	NUTS_PASS(nng_req0_open(&req));
 	NUTS_PASS(nng_rep0_open(&rep));
-	NUTS_PASS(nng_socket_get_int(rep, NNG_OPT_RECVFD, &fd));
+	NUTS_PASS(nng_socket_get_recv_poll_fd(rep, &fd));
 	NUTS_TRUE(fd >= 0);
 
 	// Not readable if not connected!
@@ -117,21 +115,6 @@ test_rep_poll_readable(void)
 
 	NUTS_CLOSE(req);
 	NUTS_CLOSE(rep);
-}
-
-void
-test_rep_context_no_poll(void)
-{
-	int        fd;
-	nng_socket req;
-	nng_ctx    ctx;
-
-	NUTS_PASS(nng_rep0_open(&req));
-	NUTS_PASS(nng_ctx_open(&ctx, req));
-	NUTS_FAIL(nng_ctx_get_int(ctx, NNG_OPT_SENDFD, &fd), NNG_ENOTSUP);
-	NUTS_FAIL(nng_ctx_get_int(ctx, NNG_OPT_RECVFD, &fd), NNG_ENOTSUP);
-	NUTS_PASS(nng_ctx_close(ctx));
-	NUTS_CLOSE(req);
 }
 
 void
@@ -763,7 +746,6 @@ NUTS_TESTS = {
 	{ "rep send bad state", test_rep_send_bad_state },
 	{ "rep poll readable", test_rep_poll_readable },
 	{ "rep poll writable", test_rep_poll_writeable },
-	{ "rep context does not poll", test_rep_context_no_poll },
 	{ "rep validate peer", test_rep_validate_peer },
 	{ "rep huge send", test_rep_huge_send },
 	{ "rep huge send socket", test_rep_huge_send_socket },

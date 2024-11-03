@@ -7,26 +7,25 @@
 // found online at https://opensource.org/licenses/MIT.
 //
 
+#include "nng/nng.h"
 #include <nuts.h>
 
 void
 test_resp_identity(void)
 {
-	nng_socket s;
-	int        p;
-	char      *n;
+	nng_socket  s;
+	uint16_t    p;
+	const char *n;
 
 	NUTS_PASS(nng_respondent0_open(&s));
-	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_PROTO, &p));
+	NUTS_PASS(nng_socket_proto_id(s, &p));
 	NUTS_TRUE(p == NNG_RESPONDENT0_SELF);
-	NUTS_TRUE(nng_socket_get_int(s, NNG_OPT_PEER, &p) == 0);
+	NUTS_TRUE(nng_socket_peer_id(s, &p) == 0);
 	NUTS_TRUE(p == NNG_RESPONDENT0_PEER);
-	NUTS_TRUE(nng_socket_get_string(s, NNG_OPT_PROTONAME, &n) == 0);
+	NUTS_TRUE(nng_socket_proto_name(s, &n) == 0);
 	NUTS_MATCH(n, NNG_RESPONDENT0_SELF_NAME);
-	nng_strfree(n);
-	NUTS_TRUE(nng_socket_get_string(s, NNG_OPT_PEERNAME, &n) == 0);
+	NUTS_TRUE(nng_socket_peer_name(s, &n) == 0);
 	NUTS_MATCH(n, NNG_RESPONDENT0_PEER_NAME);
-	nng_strfree(n);
 	NUTS_CLOSE(s);
 }
 
@@ -52,7 +51,7 @@ test_resp_poll_writeable(void)
 
 	NUTS_PASS(nng_surveyor0_open(&surv));
 	NUTS_PASS(nng_respondent0_open(&resp));
-	NUTS_PASS(nng_socket_get_int(resp, NNG_OPT_SENDFD, &fd));
+	NUTS_PASS(nng_socket_get_send_poll_fd(resp, &fd));
 	NUTS_TRUE(fd >= 0);
 
 	// Not writable before connect.
@@ -89,7 +88,7 @@ test_resp_poll_readable(void)
 
 	NUTS_PASS(nng_surveyor0_open(&surv));
 	NUTS_PASS(nng_respondent0_open(&resp));
-	NUTS_PASS(nng_socket_get_int(resp, NNG_OPT_RECVFD, &fd));
+	NUTS_PASS(nng_socket_get_recv_poll_fd(resp, &fd));
 	NUTS_TRUE(fd >= 0);
 
 	// Not readable if not connected!
@@ -114,21 +113,6 @@ test_resp_poll_readable(void)
 	// TODO verify unsolicited response
 
 	NUTS_CLOSE(surv);
-	NUTS_CLOSE(resp);
-}
-
-void
-test_resp_context_no_poll(void)
-{
-	int        fd;
-	nng_socket resp;
-	nng_ctx    ctx;
-
-	NUTS_PASS(nng_respondent0_open(&resp));
-	NUTS_PASS(nng_ctx_open(&ctx, resp));
-	NUTS_FAIL(nng_ctx_get_int(ctx, NNG_OPT_SENDFD, &fd), NNG_ENOTSUP);
-	NUTS_FAIL(nng_ctx_get_int(ctx, NNG_OPT_RECVFD, &fd), NNG_ENOTSUP);
-	NUTS_PASS(nng_ctx_close(ctx));
 	NUTS_CLOSE(resp);
 }
 
@@ -480,7 +464,6 @@ test_resp_ttl_option(void)
 	nng_socket  resp;
 	int         v;
 	bool        b;
-	size_t      sz;
 	const char *opt = NNG_OPT_MAXTTL;
 
 	NUTS_PASS(nng_respondent0_open(&resp));
@@ -493,15 +476,6 @@ test_resp_ttl_option(void)
 	NUTS_PASS(nng_socket_set_int(resp, opt, 3));
 	NUTS_PASS(nng_socket_get_int(resp, opt, &v));
 	NUTS_TRUE(v == 3);
-	v  = 0;
-	sz = sizeof(v);
-	NUTS_PASS(nng_socket_get(resp, opt, &v, &sz));
-	NUTS_TRUE(v == 3);
-	NUTS_TRUE(sz == sizeof(v));
-
-	NUTS_FAIL(nng_socket_set(resp, opt, "", 1), NNG_EINVAL);
-	sz = 1;
-	NUTS_FAIL(nng_socket_get(resp, opt, &v, &sz), NNG_EINVAL);
 	NUTS_FAIL(nng_socket_set_bool(resp, opt, true), NNG_EBADTYPE);
 	NUTS_FAIL(nng_socket_get_bool(resp, opt, &b), NNG_EBADTYPE);
 
@@ -568,7 +542,6 @@ TEST_LIST = {
 	{ "respond send bad state", test_resp_send_bad_state },
 	{ "respond poll readable", test_resp_poll_readable },
 	{ "respond poll writable", test_resp_poll_writeable },
-	{ "respond context does not poll", test_resp_context_no_poll },
 	{ "respond validate peer", test_resp_validate_peer },
 	{ "respond double recv", test_resp_double_recv },
 	{ "respond close pipe before send", test_resp_close_pipe_before_send },

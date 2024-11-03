@@ -11,6 +11,7 @@
 #include "nng/nng.h"
 #include "core/nng_impl.h"
 #include "core/platform.h"
+#include "core/socket.h"
 
 // This file provides the "public" API.  This is a thin wrapper around
 // internal API functions.  We use the public prefix instead of internal,
@@ -409,21 +410,13 @@ ctx_get(nng_ctx id, const char *n, void *v, size_t *szp, nni_type t)
 	nni_ctx *ctx;
 	int      rv;
 
-	if ((rv = nni_init()) != 0) {
-		return (rv);
-	}
-	if ((rv = nni_ctx_find(&ctx, id.id, false)) != 0) {
+	if (((rv = nni_init()) != 0) ||
+	    ((rv = nni_ctx_find(&ctx, id.id, false)) != 0)) {
 		return (rv);
 	}
 	rv = nni_ctx_getopt(ctx, n, v, szp, t);
 	nni_ctx_rele(ctx);
 	return (rv);
-}
-
-int
-nng_ctx_get(nng_ctx id, const char *n, void *v, size_t *szp)
-{
-	return (ctx_get(id, n, v, szp, NNI_TYPE_OPAQUE));
 }
 
 int
@@ -468,33 +461,19 @@ nng_ctx_get_ms(nng_ctx id, const char *n, nng_duration *v)
 	return (ctx_get(id, n, v, NULL, NNI_TYPE_DURATION));
 }
 
-int
-nng_ctx_get_addr(nng_ctx id, const char *n, nng_sockaddr *v)
-{
-	return (ctx_get(id, n, v, NULL, NNI_TYPE_SOCKADDR));
-}
-
 static int
 ctx_set(nng_ctx id, const char *n, const void *v, size_t sz, nni_type t)
 {
 	nni_ctx *ctx;
 	int      rv;
 
-	if ((rv = nni_init()) != 0) {
-		return (rv);
-	}
-	if ((rv = nni_ctx_find(&ctx, id.id, false)) != 0) {
+	if (((rv = nni_init()) != 0) ||
+	    ((rv = nni_ctx_find(&ctx, id.id, false)) != 0)) {
 		return (rv);
 	}
 	rv = nni_ctx_setopt(ctx, n, v, sz, t);
 	nni_ctx_rele(ctx);
 	return (rv);
-}
-
-int
-nng_ctx_set(nng_ctx id, const char *n, const void *v, size_t sz)
-{
-	return (ctx_set(id, n, v, sz, NNI_TYPE_OPAQUE));
 }
 
 int
@@ -538,12 +517,6 @@ nng_ctx_set_string(nng_ctx id, const char *n, const char *v)
 {
 	return (
 	    ctx_set(id, n, v, v == NULL ? 0 : strlen(v) + 1, NNI_TYPE_STRING));
-}
-
-int
-nng_ctx_set_addr(nng_ctx id, const char *n, const nng_sockaddr *v)
-{
-	return (ctx_set(id, n, v, sizeof(*v), NNI_TYPE_SOCKADDR));
 }
 
 int
@@ -701,12 +674,6 @@ dialer_set(nng_dialer id, const char *n, const void *v, size_t sz, nni_type t)
 }
 
 int
-nng_dialer_set(nng_dialer id, const char *n, const void *v, size_t sz)
-{
-	return (dialer_set(id, n, v, sz, NNI_TYPE_OPAQUE));
-}
-
-int
 nng_dialer_set_int(nng_dialer id, const char *n, int v)
 {
 	return (dialer_set(id, n, &v, sizeof(v), NNI_TYPE_INT32));
@@ -770,12 +737,6 @@ dialer_get(nng_dialer id, const char *n, void *v, size_t *szp, nni_type t)
 	rv = nni_dialer_getopt(d, n, v, szp, t);
 	nni_dialer_rele(d);
 	return (rv);
-}
-
-int
-nng_dialer_get(nng_dialer id, const char *n, void *v, size_t *szp)
-{
-	return (dialer_get(id, n, v, szp, NNI_TYPE_OPAQUE));
 }
 
 int
@@ -845,12 +806,6 @@ listener_set(
 }
 
 int
-nng_listener_set(nng_listener id, const char *n, const void *v, size_t sz)
-{
-	return (listener_set(id, n, v, sz, NNI_TYPE_OPAQUE));
-}
-
-int
 nng_listener_set_int(nng_listener id, const char *n, int v)
 {
 	return (listener_set(id, n, &v, sizeof(v), NNI_TYPE_INT32));
@@ -915,12 +870,6 @@ listener_get(
 	rv = nni_listener_getopt(l, name, v, szp, t);
 	nni_listener_rele(l);
 	return (rv);
-}
-
-int
-nng_listener_get(nng_listener id, const char *n, void *v, size_t *szp)
-{
-	return (listener_get(id, n, v, szp, NNI_TYPE_OPAQUE));
 }
 
 int
@@ -1016,12 +965,6 @@ socket_set(
 }
 
 int
-nng_socket_set(nng_socket id, const char *n, const void *v, size_t sz)
-{
-	return (socket_set(id, n, v, sz, NNI_TYPE_OPAQUE));
-}
-
-int
 nng_socket_set_int(nng_socket id, const char *n, int v)
 {
 	return (socket_set(id, n, &v, sizeof(v), NNI_TYPE_INT32));
@@ -1064,12 +1007,6 @@ nng_socket_set_string(nng_socket id, const char *n, const char *v)
 	    id, n, v, v == NULL ? 0 : strlen(v) + 1, NNI_TYPE_STRING));
 }
 
-int
-nng_socket_set_addr(nng_socket id, const char *n, const nng_sockaddr *v)
-{
-	return (socket_set(id, n, v, sizeof(*v), NNI_TYPE_SOCKADDR));
-}
-
 static int
 socket_get(nng_socket s, const char *name, void *val, size_t *szp, nni_type t)
 {
@@ -1085,12 +1022,6 @@ socket_get(nng_socket s, const char *name, void *val, size_t *szp, nni_type t)
 	rv = nni_sock_getopt(sock, name, val, szp, t);
 	nni_sock_rele(sock);
 	return (rv);
-}
-
-int
-nng_socket_get(nng_socket id, const char *n, void *v, size_t *szp)
-{
-	return (socket_get(id, n, v, szp, NNI_TYPE_OPAQUE));
 }
 
 int
@@ -1136,9 +1067,114 @@ nng_socket_get_ms(nng_socket id, const char *n, nng_duration *v)
 }
 
 int
-nng_socket_get_addr(nng_socket id, const char *n, nng_sockaddr *v)
+nng_socket_get_recv_poll_fd(nng_socket id, int *fdp)
 {
-	return (socket_get(id, n, v, NULL, NNI_TYPE_SOCKADDR));
+	int       rv;
+	nni_sock *sock;
+
+	if (((rv = nni_init()) != 0) ||
+	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+		return (rv);
+	}
+
+	rv = nni_sock_get_recv_fd(sock, fdp);
+	nni_sock_rele(sock);
+	return (rv);
+}
+
+int
+nng_socket_get_send_poll_fd(nng_socket id, int *fdp)
+{
+	int       rv;
+	nni_sock *sock;
+
+	if (((rv = nni_init()) != 0) ||
+	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+		return (rv);
+	}
+
+	rv = nni_sock_get_send_fd(sock, fdp);
+	nni_sock_rele(sock);
+	return (rv);
+}
+
+int
+nng_socket_proto_id(nng_socket id, uint16_t *idp)
+{
+	int       rv;
+	nni_sock *sock;
+
+	if (((rv = nni_init()) != 0) ||
+	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+		return (rv);
+	}
+
+	*idp = nni_sock_proto_id(sock);
+	nni_sock_rele(sock);
+	return (0);
+}
+
+int
+nng_socket_peer_id(nng_socket id, uint16_t *idp)
+{
+	int       rv;
+	nni_sock *sock;
+
+	if (((rv = nni_init()) != 0) ||
+	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+		return (rv);
+	}
+
+	*idp = nni_sock_peer_id(sock);
+	nni_sock_rele(sock);
+	return (0);
+}
+
+int
+nng_socket_proto_name(nng_socket id, const char **name)
+{
+	int       rv;
+	nni_sock *sock;
+
+	if (((rv = nni_init()) != 0) ||
+	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+		return (rv);
+	}
+
+	*name = nni_sock_proto_name(sock);
+	nni_sock_rele(sock);
+	return (0);
+}
+
+int
+nng_socket_peer_name(nng_socket id, const char **name)
+{
+	int       rv;
+	nni_sock *sock;
+
+	if (((rv = nni_init()) != 0) ||
+	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+		return (rv);
+	}
+
+	*name = nni_sock_peer_name(sock);
+	nni_sock_rele(sock);
+	return (0);
+}
+
+int
+nng_socket_raw(nng_socket id, bool *rawp)
+{
+	int       rv;
+	nni_sock *sock;
+
+	if (((rv = nni_init()) != 0) ||
+	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+		return (rv);
+	}
+	*rawp = nni_sock_raw(sock);
+	nni_sock_rele(sock);
+	return (0);
 }
 
 int
@@ -1293,12 +1329,6 @@ pipe_get(nng_pipe p, const char *name, void *val, size_t *szp, nni_type t)
 	rv = nni_pipe_getopt(pipe, name, val, szp, t);
 	nni_pipe_rele(pipe);
 	return (rv);
-}
-
-int
-nng_pipe_get(nng_pipe id, const char *n, void *v, size_t *szp)
-{
-	return (pipe_get(id, n, v, szp, NNI_TYPE_OPAQUE));
 }
 
 int

@@ -113,6 +113,10 @@ typedef struct nng_msg  nng_msg;
 typedef struct nng_stat nng_stat;
 typedef struct nng_aio  nng_aio;
 
+// For some transports, we need TLS configuration, including certificates
+// and so forth.  A TLS configuration cannot be changed once it is in use.
+typedef struct nng_tls_config nng_tls_config;
+
 // Initializers.
 // clang-format off
 #define NNG_PIPE_INITIALIZER { 0 }
@@ -230,7 +234,6 @@ NNG_DECL int nng_close(nng_socket);
 // if the socket is not valid.
 NNG_DECL int nng_socket_id(nng_socket);
 
-NNG_DECL int nng_socket_set(nng_socket, const char *, const void *, size_t);
 NNG_DECL int nng_socket_set_bool(nng_socket, const char *, bool);
 NNG_DECL int nng_socket_set_int(nng_socket, const char *, int);
 NNG_DECL int nng_socket_set_size(nng_socket, const char *, size_t);
@@ -238,8 +241,6 @@ NNG_DECL int nng_socket_set_uint64(nng_socket, const char *, uint64_t);
 NNG_DECL int nng_socket_set_string(nng_socket, const char *, const char *);
 NNG_DECL int nng_socket_set_ptr(nng_socket, const char *, void *);
 NNG_DECL int nng_socket_set_ms(nng_socket, const char *, nng_duration);
-NNG_DECL int nng_socket_set_addr(
-    nng_socket, const char *, const nng_sockaddr *);
 
 NNG_DECL int nng_socket_get(nng_socket, const char *, void *, size_t *);
 NNG_DECL int nng_socket_get_bool(nng_socket, const char *, bool *);
@@ -249,7 +250,26 @@ NNG_DECL int nng_socket_get_uint64(nng_socket, const char *, uint64_t *);
 NNG_DECL int nng_socket_get_string(nng_socket, const char *, char **);
 NNG_DECL int nng_socket_get_ptr(nng_socket, const char *, void **);
 NNG_DECL int nng_socket_get_ms(nng_socket, const char *, nng_duration *);
-NNG_DECL int nng_socket_get_addr(nng_socket, const char *, nng_sockaddr *);
+
+// These functions are used to obtain a file descriptor that will poll
+// as readable if the socket can receive or send. Applications must never
+// read or write to the file descriptor directly, but simply check it
+// with poll, epoll, kqueue, or similar functions.  This is intended to
+// aid in integration NNG with external event loops based on polling I/O.
+// Note that using these functions will force NNG to make extra system calls,
+// and thus impact performance.  The file descriptor pollability is
+// level-triggered.  These file descriptors will be closed when the socket
+// is closed.
+NNG_DECL int nng_socket_get_recv_poll_fd(nng_socket id, int *fdp);
+NNG_DECL int nng_socket_get_send_poll_fd(nng_socket id, int *fdp);
+
+// These functions are used on a socket to get information about it's
+// identity, and the identity of the peer.  Few applications need these.
+NNG_DECL int nng_socket_proto_id(nng_socket id, uint16_t *idp);
+NNG_DECL int nng_socket_peer_id(nng_socket id, uint16_t *idp);
+NNG_DECL int nng_socket_proto_name(nng_socket id, const char **namep);
+NNG_DECL int nng_socket_peer_name(nng_socket id, const char **namep);
+NNG_DECL int nng_socket_raw(nng_socket id, bool *rawp);
 
 // Utility function for getting a printable form of the socket address
 // for display in logs, etc.  It is not intended to be parsed, and the
@@ -329,7 +349,6 @@ NNG_DECL int nng_dialer_id(nng_dialer);
 // invalid.
 NNG_DECL int nng_listener_id(nng_listener);
 
-NNG_DECL int nng_dialer_set(nng_dialer, const char *, const void *, size_t);
 NNG_DECL int nng_dialer_set_bool(nng_dialer, const char *, bool);
 NNG_DECL int nng_dialer_set_int(nng_dialer, const char *, int);
 NNG_DECL int nng_dialer_set_size(nng_dialer, const char *, size_t);
@@ -340,7 +359,6 @@ NNG_DECL int nng_dialer_set_ms(nng_dialer, const char *, nng_duration);
 NNG_DECL int nng_dialer_set_addr(
     nng_dialer, const char *, const nng_sockaddr *);
 
-NNG_DECL int nng_dialer_get(nng_dialer, const char *, void *, size_t *);
 NNG_DECL int nng_dialer_get_bool(nng_dialer, const char *, bool *);
 NNG_DECL int nng_dialer_get_int(nng_dialer, const char *, int *);
 NNG_DECL int nng_dialer_get_size(nng_dialer, const char *, size_t *);
@@ -350,8 +368,6 @@ NNG_DECL int nng_dialer_get_ptr(nng_dialer, const char *, void **);
 NNG_DECL int nng_dialer_get_ms(nng_dialer, const char *, nng_duration *);
 NNG_DECL int nng_dialer_get_addr(nng_dialer, const char *, nng_sockaddr *);
 
-NNG_DECL int nng_listener_set(
-    nng_listener, const char *, const void *, size_t);
 NNG_DECL int nng_listener_set_bool(nng_listener, const char *, bool);
 NNG_DECL int nng_listener_set_int(nng_listener, const char *, int);
 NNG_DECL int nng_listener_set_size(nng_listener, const char *, size_t);
@@ -362,7 +378,6 @@ NNG_DECL int nng_listener_set_ms(nng_listener, const char *, nng_duration);
 NNG_DECL int nng_listener_set_addr(
     nng_listener, const char *, const nng_sockaddr *);
 
-NNG_DECL int nng_listener_get(nng_listener, const char *, void *, size_t *);
 NNG_DECL int nng_listener_get_bool(nng_listener, const char *, bool *);
 NNG_DECL int nng_listener_get_int(nng_listener, const char *, int *);
 NNG_DECL int nng_listener_get_size(nng_listener, const char *, size_t *);
@@ -461,7 +476,6 @@ NNG_DECL void nng_ctx_send(nng_ctx, nng_aio *);
 // on a context instead of a socket.
 NNG_DECL int nng_ctx_sendmsg(nng_ctx, nng_msg *, int);
 
-NNG_DECL int nng_ctx_get(nng_ctx, const char *, void *, size_t *);
 NNG_DECL int nng_ctx_get_bool(nng_ctx, const char *, bool *);
 NNG_DECL int nng_ctx_get_int(nng_ctx, const char *, int *);
 NNG_DECL int nng_ctx_get_size(nng_ctx, const char *, size_t *);
@@ -469,7 +483,6 @@ NNG_DECL int nng_ctx_get_uint64(nng_ctx, const char *, uint64_t *);
 NNG_DECL int nng_ctx_get_string(nng_ctx, const char *, char **);
 NNG_DECL int nng_ctx_get_ptr(nng_ctx, const char *, void **);
 NNG_DECL int nng_ctx_get_ms(nng_ctx, const char *, nng_duration *);
-NNG_DECL int nng_ctx_get_addr(nng_ctx, const char *, nng_sockaddr *);
 
 NNG_DECL int nng_ctx_set(nng_ctx, const char *, const void *, size_t);
 NNG_DECL int nng_ctx_set_bool(nng_ctx, const char *, bool);
@@ -479,7 +492,6 @@ NNG_DECL int nng_ctx_set_uint64(nng_ctx, const char *, uint64_t);
 NNG_DECL int nng_ctx_set_string(nng_ctx, const char *, const char *);
 NNG_DECL int nng_ctx_set_ptr(nng_ctx, const char *, void *);
 NNG_DECL int nng_ctx_set_ms(nng_ctx, const char *, nng_duration);
-NNG_DECL int nng_ctx_set_addr(nng_ctx, const char *, const nng_sockaddr *);
 
 // nng_alloc is used to allocate memory.  It's intended purpose is for
 // allocating memory suitable for message buffers with nng_send().
@@ -689,7 +701,6 @@ NNG_DECL nng_pipe nng_msg_get_pipe(const nng_msg *);
 // we do permit an application to close a pipe. This can be useful, for
 // example during a connection notification, to disconnect a pipe that
 // is associated with an invalid or untrusted remote peer.
-NNG_DECL int nng_pipe_get(nng_pipe, const char *, void *, size_t *);
 NNG_DECL int nng_pipe_get_bool(nng_pipe, const char *, bool *);
 NNG_DECL int nng_pipe_get_int(nng_pipe, const char *, int *);
 NNG_DECL int nng_pipe_get_ms(nng_pipe, const char *, nng_duration *);
@@ -711,15 +722,8 @@ NNG_DECL nng_listener nng_pipe_listener(nng_pipe);
 
 // Options.
 #define NNG_OPT_SOCKNAME "socket-name"
-#define NNG_OPT_RAW "raw"
-#define NNG_OPT_PROTO "protocol"
-#define NNG_OPT_PROTONAME "protocol-name"
-#define NNG_OPT_PEER "peer"
-#define NNG_OPT_PEERNAME "peer-name"
 #define NNG_OPT_RECVBUF "recv-buffer"
 #define NNG_OPT_SENDBUF "send-buffer"
-#define NNG_OPT_RECVFD "recv-fd"
-#define NNG_OPT_SENDFD "send-fd"
 #define NNG_OPT_RECVTIMEO "recv-timeout"
 #define NNG_OPT_SENDTIMEO "send-timeout"
 #define NNG_OPT_LOCADDR "local-address"
@@ -740,37 +744,6 @@ NNG_DECL nng_listener nng_pipe_listener(nng_pipe);
 // placed, and so the caller must take care not to use the associated object
 // after the endpoint it is associated with is closed.
 #define NNG_OPT_TLS_CONFIG "tls-config"
-
-// NNG_OPT_TLS_AUTH_MODE is a write-only integer (int) option that specifies
-// whether peer authentication is needed.  The option can take one of the
-// values of NNG_TLS_AUTH_MODE_NONE, NNG_TLS_AUTH_MODE_OPTIONAL, or
-// NNG_TLS_AUTH_MODE_REQUIRED.  The default is typically NNG_TLS_AUTH_MODE_NONE
-// for listeners, and NNG_TLS_AUTH_MODE_REQUIRED for dialers. If set to
-// REQUIRED, then connections will be rejected if the peer cannot be verified.
-// If set to OPTIONAL, then a verification step takes place, but the connection
-// is still permitted.  (The result can be checked with NNG_OPT_TLS_VERIFIED).
-#define NNG_OPT_TLS_AUTH_MODE "tls-authmode"
-
-// NNG_OPT_TLS_CERT_KEY_FILE names a single file that contains a certificate
-// and key identifying the endpoint.  This is a write-only value.  This can be
-// set multiple times for different keys/certs corresponding to
-// different algorithms on listeners, whereas dialers only support one.  The
-// file must contain both cert and key as PEM blocks, and the key must
-// not be encrypted.  (If more flexibility is needed, use the TLS configuration
-// directly, via NNG_OPT_TLS_CONFIG.)
-#define NNG_OPT_TLS_CERT_KEY_FILE "tls-cert-key-file"
-
-// NNG_OPT_TLS_CA_FILE names a single file that contains certificate(s) for a
-// CA, and optionally CRLs, which are used to validate the peer's certificate.
-// This is a write-only value, but multiple CAs can be loaded by setting this
-// multiple times.
-#define NNG_OPT_TLS_CA_FILE "tls-ca-file"
-
-// NNG_OPT_TLS_SERVER_NAME is a write-only string that can typically be
-// set on dialers to check the CN of the server for a match.  This
-// can also affect SNI (server name indication).  It usually has no effect
-// on listeners.
-#define NNG_OPT_TLS_SERVER_NAME "tls-server-name"
 
 // NNG_OPT_TLS_VERIFIED returns a boolean indicating whether the peer has
 // been verified (true) or not (false). Typically, this is read-only, and
@@ -1169,7 +1142,6 @@ NNG_DECL void nng_stream_free(nng_stream *);
 NNG_DECL void nng_stream_close(nng_stream *);
 NNG_DECL void nng_stream_send(nng_stream *, nng_aio *);
 NNG_DECL void nng_stream_recv(nng_stream *, nng_aio *);
-NNG_DECL int  nng_stream_get(nng_stream *, const char *, void *, size_t *);
 NNG_DECL int  nng_stream_get_bool(nng_stream *, const char *, bool *);
 NNG_DECL int  nng_stream_get_int(nng_stream *, const char *, int *);
 NNG_DECL int  nng_stream_get_ms(nng_stream *, const char *, nng_duration *);
@@ -1178,16 +1150,6 @@ NNG_DECL int  nng_stream_get_uint64(nng_stream *, const char *, uint64_t *);
 NNG_DECL int  nng_stream_get_string(nng_stream *, const char *, char **);
 NNG_DECL int  nng_stream_get_ptr(nng_stream *, const char *, void **);
 NNG_DECL int  nng_stream_get_addr(nng_stream *, const char *, nng_sockaddr *);
-NNG_DECL int  nng_stream_set(nng_stream *, const char *, const void *, size_t);
-NNG_DECL int  nng_stream_set_bool(nng_stream *, const char *, bool);
-NNG_DECL int  nng_stream_set_int(nng_stream *, const char *, int);
-NNG_DECL int  nng_stream_set_ms(nng_stream *, const char *, nng_duration);
-NNG_DECL int  nng_stream_set_size(nng_stream *, const char *, size_t);
-NNG_DECL int  nng_stream_set_uint64(nng_stream *, const char *, uint64_t);
-NNG_DECL int  nng_stream_set_string(nng_stream *, const char *, const char *);
-NNG_DECL int  nng_stream_set_ptr(nng_stream *, const char *, void *);
-NNG_DECL int  nng_stream_set_addr(
-     nng_stream *, const char *, const nng_sockaddr *);
 
 NNG_DECL int nng_stream_dialer_alloc(nng_stream_dialer **, const char *);
 NNG_DECL int nng_stream_dialer_alloc_url(
@@ -1195,12 +1157,8 @@ NNG_DECL int nng_stream_dialer_alloc_url(
 NNG_DECL void nng_stream_dialer_free(nng_stream_dialer *);
 NNG_DECL void nng_stream_dialer_close(nng_stream_dialer *);
 NNG_DECL void nng_stream_dialer_dial(nng_stream_dialer *, nng_aio *);
-NNG_DECL int  nng_stream_dialer_set(
-     nng_stream_dialer *, const char *, const void *, size_t);
-NNG_DECL int nng_stream_dialer_get(
-    nng_stream_dialer *, const char *, void *, size_t *);
-NNG_DECL int nng_stream_dialer_get_bool(
-    nng_stream_dialer *, const char *, bool *);
+NNG_DECL int  nng_stream_dialer_get_bool(
+     nng_stream_dialer *, const char *, bool *);
 NNG_DECL int nng_stream_dialer_get_int(
     nng_stream_dialer *, const char *, int *);
 NNG_DECL int nng_stream_dialer_get_ms(
@@ -1238,12 +1196,8 @@ NNG_DECL void nng_stream_listener_free(nng_stream_listener *);
 NNG_DECL void nng_stream_listener_close(nng_stream_listener *);
 NNG_DECL int  nng_stream_listener_listen(nng_stream_listener *);
 NNG_DECL void nng_stream_listener_accept(nng_stream_listener *, nng_aio *);
-NNG_DECL int  nng_stream_listener_set(
-     nng_stream_listener *, const char *, const void *, size_t);
-NNG_DECL int nng_stream_listener_get(
-    nng_stream_listener *, const char *, void *, size_t *);
-NNG_DECL int nng_stream_listener_get_bool(
-    nng_stream_listener *, const char *, bool *);
+NNG_DECL int  nng_stream_listener_get_bool(
+     nng_stream_listener *, const char *, bool *);
 NNG_DECL int nng_stream_listener_get_int(
     nng_stream_listener *, const char *, int *);
 NNG_DECL int nng_stream_listener_get_ms(
@@ -1545,6 +1499,116 @@ NNG_DECL void nng_cv_wake(nng_cv *);
 // reduce the thundering herd problem, but care must be taken to ensure
 // that no waiter starves forever.
 NNG_DECL void nng_cv_wake1(nng_cv *);
+
+// Note that TLS functions may be stubbed out if TLS is not enabled in
+// the build.
+
+typedef enum nng_tls_mode {
+	NNG_TLS_MODE_CLIENT = 0,
+	NNG_TLS_MODE_SERVER = 1,
+} nng_tls_mode;
+
+typedef enum nng_tls_auth_mode {
+	NNG_TLS_AUTH_MODE_NONE     = 0, // No verification is performed
+	NNG_TLS_AUTH_MODE_OPTIONAL = 1, // Verify cert if presented
+	NNG_TLS_AUTH_MODE_REQUIRED = 2, // Verify cert, close if invalid
+} nng_tls_auth_mode;
+
+// TLS version numbers.  We encode the major number and minor number
+// as separate byte fields.  No support for SSL 3.0 or earlier -- older
+// versions are known to be insecure and should not be used.
+// When possible applications should restrict themselves to TLS 1.2 or better.
+typedef enum nng_tls_version {
+	NNG_TLS_1_0 = 0x301,
+	NNG_TLS_1_1 = 0x302,
+	NNG_TLS_1_2 = 0x303,
+	NNG_TLS_1_3 = 0x304
+} nng_tls_version;
+
+// nng_tls_config_alloc creates a TLS configuration using
+// reasonable defaults.  This configuration can be shared
+// with multiple pipes or services/servers.
+NNG_DECL int nng_tls_config_alloc(nng_tls_config **, nng_tls_mode);
+
+// nng_tls_config_hold increments the reference count on the TLS
+// configuration object.  The hold can be dropped by calling
+// nng_tls_config_free later.
+NNG_DECL void nng_tls_config_hold(nng_tls_config *);
+
+// nng_tls_config_free drops the reference count on the TLS
+// configuration object, and if zero, deallocates it.
+NNG_DECL void nng_tls_config_free(nng_tls_config *);
+
+// nng_tls_config_server_name sets the server name.  This is
+// called by clients to set the name that the server supplied
+// certificate should be matched against.  This can also cause
+// the SNI to be sent to the server to tell it which cert to
+// use if it supports more than one.
+NNG_DECL int nng_tls_config_server_name(nng_tls_config *, const char *);
+
+// nng_tls_config_ca_cert configures one or more CAs used for validation
+// of peer certificates.  Multiple CAs (and their chains) may be configured
+// by either calling this multiple times, or by specifying a list of
+// certificates as concatenated data.  The final argument is an optional CRL
+// (revocation list) for the CA, also in PEM.  Both PEM strings are ASCIIZ
+// format (except that the CRL may be NULL).
+NNG_DECL int nng_tls_config_ca_chain(
+    nng_tls_config *, const char *, const char *);
+
+// nng_tls_config_own_cert is used to load our own certificate and public
+// key.  For servers, this may be called more than once to configure multiple
+// different keys, for example with different algorithms depending on what
+// the peer supports. On the client, only a single option is available.
+// The first two arguments are the cert (or validation chain) and the
+// key as PEM format ASCIIZ strings.  The final argument is an optional
+// password and may be NULL.
+NNG_DECL int nng_tls_config_own_cert(
+    nng_tls_config *, const char *, const char *, const char *);
+
+// nng_tls_config_key is used to pass our own private key.
+NNG_DECL int nng_tls_config_key(nng_tls_config *, const uint8_t *, size_t);
+
+// nng_tls_config_pass is used to pass a password used to decrypt
+// private keys that are encrypted.
+NNG_DECL int nng_tls_config_pass(nng_tls_config *, const char *);
+
+// nng_tls_config_auth_mode is used to configure the authentication mode use.
+// The default is that servers have this off (i.e. no client authentication)
+// and clients have it on (they verify the server), which matches typical
+// practice.
+NNG_DECL int nng_tls_config_auth_mode(nng_tls_config *, nng_tls_auth_mode);
+
+// nng_tls_config_ca_file is used to pass a CA chain and optional CRL
+// via the filesystem.  If CRL data is present, it must be contained
+// in the file, along with the CA certificate data.  The format is PEM.
+// The path name must be a legal file name.
+NNG_DECL int nng_tls_config_ca_file(nng_tls_config *, const char *);
+
+// nng_tls_config_cert_key_file is used to pass our own certificate and
+// private key data via the filesystem.  Both the key and certificate
+// must be present as PEM blocks in the same file.  A password is used to
+// decrypt the private key if it is encrypted and the password supplied is not
+// NULL. This may be called multiple times on servers, but only once on a
+// client. (Servers can support multiple different certificates and keys for
+// different cryptographic algorithms.  Clients only get one.)
+NNG_DECL int nng_tls_config_cert_key_file(
+    nng_tls_config *, const char *, const char *);
+
+// nng_tls_config_psk_identity is used to pass TLS PSK parameters.  The
+// identity, and an associated key.  Clients can only do this once.
+// Servers can do it multiple times, potentially, to provide for different
+// keys for different client identities.  There is no way to remove these
+// from a configuration.
+NNG_DECL int nng_tls_config_psk(
+    nng_tls_config *, const char *, const uint8_t *, size_t);
+
+// Configure supported TLS version.  By default we usually restrict
+// ourselves to TLS 1.2 and newer.  We do not support older versions.
+// If the implementation cannot support any version (for example if
+// the minimum requested is 1.3 but the TLS implementation lacks support
+// for TLS 1.3) then NNG_ENOTSUP will be returned.
+NNG_DECL int nng_tls_config_version(
+    nng_tls_config *, nng_tls_version, nng_tls_version);
 
 #ifdef __cplusplus
 }

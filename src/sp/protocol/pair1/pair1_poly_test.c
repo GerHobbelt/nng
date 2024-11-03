@@ -20,21 +20,19 @@
 static void
 test_poly_identity(void)
 {
-	nng_socket s;
-	int        p;
-	char      *n;
+	nng_socket  s;
+	uint16_t    p;
+	const char *n;
 
 	NUTS_PASS(nng_pair1_open_poly(&s));
-	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_PROTO, &p));
+	NUTS_PASS(nng_socket_proto_id(s, &p));
 	NUTS_TRUE(p == NUTS_PROTO(1u, 1u)); // 32
-	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_PEER, &p));
+	NUTS_PASS(nng_socket_peer_id(s, &p));
 	NUTS_TRUE(p == NUTS_PROTO(1u, 1u)); // 33
-	NUTS_PASS(nng_socket_get_string(s, NNG_OPT_PROTONAME, &n));
+	NUTS_PASS(nng_socket_proto_name(s, &n));
 	NUTS_MATCH(n, "pair1");
-	nng_strfree(n);
-	NUTS_PASS(nng_socket_get_string(s, NNG_OPT_PEERNAME, &n));
+	NUTS_PASS(nng_socket_peer_name(s, &n));
 	NUTS_MATCH(n, "pair1");
-	nng_strfree(n);
 	NUTS_CLOSE(s);
 }
 
@@ -271,8 +269,6 @@ test_poly_ttl(void)
 	// cannot set insane TTLs
 	NUTS_FAIL(nng_socket_set_int(s1, NNG_OPT_MAXTTL, 0), NNG_EINVAL);
 	NUTS_FAIL(nng_socket_set_int(s1, NNG_OPT_MAXTTL, 1000), NNG_EINVAL);
-	ttl = 8;
-	NUTS_FAIL(nng_socket_set(s1, NNG_OPT_MAXTTL, &ttl, 1), NNG_EINVAL);
 	NUTS_FAIL(nng_socket_set_bool(s1, NNG_OPT_MAXTTL, true), NNG_EBADTYPE);
 
 	NUTS_MARRY(s1, c1);

@@ -7,28 +7,27 @@
 // found online at https://opensource.org/licenses/MIT.
 //
 
+#include "nng/nng.h"
 #include <nuts.h>
 
 static void
 test_xresp_identity(void)
 {
-	nng_socket s;
-	int        p1, p2;
-	char      *n1;
-	char      *n2;
+	nng_socket  s;
+	uint16_t    p1, p2;
+	const char *n1;
+	const char *n2;
 
 	NUTS_PASS(nng_respondent0_open_raw(&s));
-	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_PROTO, &p1));
-	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_PEER, &p2));
-	NUTS_PASS(nng_socket_get_string(s, NNG_OPT_PROTONAME, &n1));
-	NUTS_PASS(nng_socket_get_string(s, NNG_OPT_PEERNAME, &n2));
+	NUTS_PASS(nng_socket_proto_id(s, &p1));
+	NUTS_PASS(nng_socket_peer_id(s, &p2));
+	NUTS_PASS(nng_socket_proto_name(s, &n1));
+	NUTS_PASS(nng_socket_peer_name(s, &n2));
 	NUTS_CLOSE(s);
 	NUTS_TRUE(p1 == NNG_RESPONDENT0_SELF);
 	NUTS_TRUE(p2 == NNG_RESPONDENT0_PEER);
 	NUTS_MATCH(n1, NNG_RESPONDENT0_SELF_NAME);
 	NUTS_MATCH(n2, NNG_RESPONDENT0_PEER_NAME);
-	nng_strfree(n1);
-	nng_strfree(n2);
 }
 
 static void
@@ -38,7 +37,7 @@ test_xresp_raw(void)
 	bool       b;
 
 	NUTS_PASS(nng_respondent0_open_raw(&s));
-	NUTS_PASS(nng_socket_get_bool(s, NNG_OPT_RAW, &b));
+	NUTS_PASS(nng_socket_raw(s, &b));
 	NUTS_TRUE(b);
 	NUTS_CLOSE(s);
 }
@@ -63,7 +62,7 @@ test_xresp_poll_writeable(void)
 
 	NUTS_PASS(nng_respondent0_open_raw(&resp));
 	NUTS_PASS(nng_surveyor0_open(&surv));
-	NUTS_PASS(nng_socket_get_int(resp, NNG_OPT_SENDFD, &fd));
+	NUTS_PASS(nng_socket_get_send_poll_fd(resp, &fd));
 	NUTS_TRUE(fd >= 0);
 
 	// We are always writeable, even before connect.  This is so that
@@ -91,7 +90,7 @@ test_xresp_poll_readable(void)
 
 	NUTS_PASS(nng_surveyor0_open(&surv));
 	NUTS_PASS(nng_respondent0_open_raw(&resp));
-	NUTS_PASS(nng_socket_get_int(resp, NNG_OPT_RECVFD, &fd));
+	NUTS_PASS(nng_socket_get_recv_poll_fd(resp, &fd));
 	NUTS_TRUE(fd >= 0);
 
 	// Not readable if not connected!
@@ -322,7 +321,6 @@ test_xresp_ttl_option(void)
 	nng_socket  resp;
 	int         v;
 	bool        b;
-	size_t      sz;
 	const char *opt = NNG_OPT_MAXTTL;
 
 	NUTS_PASS(nng_respondent0_open_raw(&resp));
@@ -335,15 +333,7 @@ test_xresp_ttl_option(void)
 	NUTS_PASS(nng_socket_set_int(resp, opt, 3));
 	NUTS_PASS(nng_socket_get_int(resp, opt, &v));
 	NUTS_TRUE(v == 3);
-	v  = 0;
-	sz = sizeof(v);
-	NUTS_PASS(nng_socket_get(resp, opt, &v, &sz));
-	NUTS_TRUE(v == 3);
-	NUTS_TRUE(sz == sizeof(v));
 
-	NUTS_FAIL(nng_socket_set(resp, opt, "", 1), NNG_EINVAL);
-	sz = 1;
-	NUTS_FAIL(nng_socket_get(resp, opt, &v, &sz), NNG_EINVAL);
 	NUTS_FAIL(nng_socket_set_bool(resp, opt, true), NNG_EBADTYPE);
 	NUTS_FAIL(nng_socket_get_bool(resp, opt, &b), NNG_EBADTYPE);
 

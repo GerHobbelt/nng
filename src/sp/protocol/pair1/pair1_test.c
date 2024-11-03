@@ -8,6 +8,7 @@
 // found online at https://opensource.org/licenses/MIT.
 //
 
+#include "nng/nng.h"
 #include <nuts.h>
 
 #define SECOND 1000
@@ -20,21 +21,19 @@
 static void
 test_mono_identity(void)
 {
-	nng_socket s;
-	int        p;
-	char      *n;
+	nng_socket  s;
+	uint16_t    p;
+	const char *n;
 
 	NUTS_PASS(nng_pair1_open(&s));
-	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_PROTO, &p));
+	NUTS_PASS(nng_socket_proto_id(s, &p));
 	NUTS_TRUE(p == NUTS_PROTO(1u, 1u)); // 32
-	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_PEER, &p));
+	NUTS_PASS(nng_socket_peer_id(s, &p));
 	NUTS_TRUE(p == NUTS_PROTO(1u, 1u)); // 33
-	NUTS_PASS(nng_socket_get_string(s, NNG_OPT_PROTONAME, &n));
+	NUTS_PASS(nng_socket_proto_name(s, &n));
 	NUTS_MATCH(n, "pair1");
-	nng_strfree(n);
-	NUTS_PASS(nng_socket_get_string(s, NNG_OPT_PEERNAME, &n));
+	NUTS_PASS(nng_socket_peer_name(s, &n));
 	NUTS_MATCH(n, "pair1");
-	nng_strfree(n);
 	NUTS_CLOSE(s);
 }
 
@@ -292,15 +291,13 @@ test_pair1_raw(void)
 	bool       raw;
 
 	NUTS_PASS(nng_pair1_open(&s1));
-	NUTS_PASS(nng_socket_get_bool(s1, NNG_OPT_RAW, &raw));
+	NUTS_PASS(nng_socket_raw(s1, &raw));
 	NUTS_TRUE(raw == false);
-	NUTS_FAIL(nng_socket_set_bool(s1, NNG_OPT_RAW, true), NNG_EREADONLY);
 	NUTS_PASS(nng_close(s1));
 
 	NUTS_PASS(nng_pair1_open_raw(&s1));
-	NUTS_PASS(nng_socket_get_bool(s1, NNG_OPT_RAW, &raw));
+	NUTS_PASS(nng_socket_raw(s1, &raw));
 	NUTS_TRUE(raw == true);
-	NUTS_FAIL(nng_socket_set_bool(s1, NNG_OPT_RAW, false), NNG_EREADONLY);
 	NUTS_PASS(nng_close(s1));
 }
 
@@ -322,7 +319,6 @@ test_pair1_ttl(void)
 	NUTS_FAIL(nng_socket_set_int(s1, NNG_OPT_MAXTTL, 0), NNG_EINVAL);
 	NUTS_FAIL(nng_socket_set_int(s1, NNG_OPT_MAXTTL, 1000), NNG_EINVAL);
 	ttl = 8;
-	NUTS_FAIL(nng_socket_set(s1, NNG_OPT_MAXTTL, &ttl, 1), NNG_EINVAL);
 	NUTS_FAIL(nng_socket_set_bool(s1, NNG_OPT_MAXTTL, true), NNG_EBADTYPE);
 
 	NUTS_MARRY(s1, c1);
@@ -469,19 +465,15 @@ test_pair1_send_buffer(void)
 	nng_socket s;
 	int        v;
 	bool       b;
-	size_t     sz;
 
 	NUTS_PASS(nng_pair1_open(&s));
 	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_SENDBUF, &v));
 	NUTS_TRUE(v == 0);
 	NUTS_FAIL(nng_socket_get_bool(s, NNG_OPT_SENDBUF, &b), NNG_EBADTYPE);
-	sz = 1;
-	NUTS_FAIL(nng_socket_get(s, NNG_OPT_SENDBUF, &b, &sz), NNG_EINVAL);
 	NUTS_FAIL(nng_socket_set_int(s, NNG_OPT_SENDBUF, -1), NNG_EINVAL);
 	NUTS_FAIL(nng_socket_set_int(s, NNG_OPT_SENDBUF, 100000), NNG_EINVAL);
 	NUTS_FAIL(
 	    nng_socket_set_bool(s, NNG_OPT_SENDBUF, false), NNG_EBADTYPE);
-	NUTS_FAIL(nng_socket_set(s, NNG_OPT_SENDBUF, &b, 1), NNG_EINVAL);
 	NUTS_PASS(nng_socket_set_int(s, NNG_OPT_SENDBUF, 100));
 	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_SENDBUF, &v));
 	NUTS_TRUE(v == 100);
@@ -494,19 +486,15 @@ test_pair1_recv_buffer(void)
 	nng_socket s;
 	int        v;
 	bool       b;
-	size_t     sz;
 
 	NUTS_PASS(nng_pair1_open(&s));
 	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_RECVBUF, &v));
 	NUTS_TRUE(v == 0);
 	NUTS_FAIL(nng_socket_get_bool(s, NNG_OPT_RECVBUF, &b), NNG_EBADTYPE);
-	sz = 1;
-	NUTS_FAIL(nng_socket_get(s, NNG_OPT_RECVBUF, &b, &sz), NNG_EINVAL);
 	NUTS_FAIL(nng_socket_set_int(s, NNG_OPT_RECVBUF, -1), NNG_EINVAL);
 	NUTS_FAIL(nng_socket_set_int(s, NNG_OPT_RECVBUF, 100000), NNG_EINVAL);
 	NUTS_FAIL(
 	    nng_socket_set_bool(s, NNG_OPT_RECVBUF, false), NNG_EBADTYPE);
-	NUTS_FAIL(nng_socket_set(s, NNG_OPT_RECVBUF, &b, 1), NNG_EINVAL);
 	NUTS_PASS(nng_socket_set_int(s, NNG_OPT_RECVBUF, 100));
 	NUTS_PASS(nng_socket_get_int(s, NNG_OPT_RECVBUF, &v));
 	NUTS_TRUE(v == 100);
@@ -524,7 +512,7 @@ test_pair1_poll_readable(void)
 	NUTS_PASS(nng_pair1_open(&s2));
 	NUTS_PASS(nng_socket_set_ms(s1, NNG_OPT_RECVTIMEO, 1000));
 	NUTS_PASS(nng_socket_set_ms(s2, NNG_OPT_SENDTIMEO, 1000));
-	NUTS_PASS(nng_socket_get_int(s1, NNG_OPT_RECVFD, &fd));
+	NUTS_PASS(nng_socket_get_recv_poll_fd(s1, &fd));
 	NUTS_TRUE(fd >= 0);
 
 	// Not readable if not connected!
@@ -570,7 +558,7 @@ test_pair1_poll_writable(void)
 	NUTS_PASS(nng_pair1_open(&s2));
 	NUTS_PASS(nng_socket_set_ms(s1, NNG_OPT_RECVTIMEO, 1000));
 	NUTS_PASS(nng_socket_set_ms(s2, NNG_OPT_SENDTIMEO, 1000));
-	NUTS_PASS(nng_socket_get_int(s1, NNG_OPT_SENDFD, &fd));
+	NUTS_PASS(nng_socket_get_send_poll_fd(s1, &fd));
 	NUTS_TRUE(fd >= 0);
 
 	// Not writable if not connected!
