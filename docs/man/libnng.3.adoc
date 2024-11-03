@@ -98,21 +98,21 @@ user-payload and the header carries protocol specific header information.
 Most applications will only interact with the body.
 
 |===
-|xref:nng_msg_alloc.3.adoc[nng_msg_alloc()]|allocate a message
-|xref:nng_msg_append.3.adoc[nng_msg_append()]|append to message body
-|xref:nng_msg_body.3.adoc[nng_msg_body()]|return message body
-|xref:nng_msg_capacity.3.adoc[nng_msg_capacity()]|return capacity allocated for message body
-|xref:nng_msg_chop.3.adoc[nng_msg_chop()]|remove data from end of message body
-|xref:nng_msg_clear.3.adoc[nng_msg_clear()]|clear message body
-|xref:nng_msg_dup.3.adoc[nng_msg_dup()]|duplicate a message
-|xref:nng_msg_free.3.adoc[nng_msg_free()]|free a message
+// |xref:nng_msg_alloc.3.adoc[nng_msg_alloc()]|allocate a message
+// |xref:nng_msg_append.3.adoc[nng_msg_append()]|append to message body
+// |xref:nng_msg_body.3.adoc[nng_msg_body()]|return message body
+// |xref:nng_msg_capacity.3.adoc[nng_msg_capacity()]|return capacity allocated for message body
+// |xref:nng_msg_chop.3.adoc[nng_msg_chop()]|remove data from end of message body
+// |xref:nng_msg_clear.3.adoc[nng_msg_clear()]|clear message body
+// |xref:nng_msg_dup.3.adoc[nng_msg_dup()]|duplicate a message
+// |xref:nng_msg_free.3.adoc[nng_msg_free()]|free a message
 |xref:nng_msg_get_pipe.3.adoc[nng_msg_get_pipe()]|get pipe for message
-|xref:nng_msg_insert.3.adoc[nng_msg_insert()]|prepend to message body
-|xref:nng_msg_len.3.adoc[nng_msg_len()]|return the message body length
-|xref:nng_msg_realloc.3.adoc[nng_msg_realloc()]|reallocate a message
-|xref:nng_msg_reserve.3.adoc[nng_msg_reserve()]|reserve storage for message body
+// |xref:nng_msg_insert.3.adoc[nng_msg_insert()]|prepend to message body
+// |xref:nng_msg_len.3.adoc[nng_msg_len()]|return the message body length
+// |xref:nng_msg_realloc.3.adoc[nng_msg_realloc()]|reallocate a message
+// |xref:nng_msg_reserve.3.adoc[nng_msg_reserve()]|reserve storage for message body
 |xref:nng_msg_set_pipe.3.adoc[nng_msg_set_pipe()]|set pipe for message
-|xref:nng_msg_trim.3.adoc[nng_msg_trim()]|remove data from start of message body
+// |xref:nng_msg_trim.3.adoc[nng_msg_trim()]|remove data from start of message body
 |xref:nng_recvmsg.3.adoc[nng_recvmsg()]|receive a message
 |xref:nng_sendmsg.3.adoc[nng_sendmsg()]|send a message
 |===
@@ -277,31 +277,33 @@ Common functionality for message logging.
 
 === Supplemental API
 
-These supplemental functions are not intrinsic to building
-network applications with _NNG_, but they are made available
-as a convenience to aid in creating portable applications.
+NOTE: All these functions have been moved to new mdbook docs.
 
-|===
+// These supplemental functions are not intrinsic to building
+// network applications with _NNG_, but they are made available
+// as a convenience to aid in creating portable applications.
+//
+// |===
 // |xref:nng_clock.3supp.adoc[nng_clock()]|get time
-|xref:nng_cv_alloc.3supp.adoc[nng_cv_alloc()]|allocate condition variable
-|xref:nng_cv_free.3supp.adoc[nng_cv_free()]|free condition variable
-|xref:nng_cv_until.3supp.adoc[nng_cv_until()]|wait for condition or timeout
-|xref:nng_cv_wait.3supp.adoc[nng_cv_wait()]|wait for condition
-|xref:nng_cv_wake.3supp.adoc[nng_cv_wake()]|wake all waiters
-|xref:nng_cv_wake1.3supp.adoc[nng_cv_wake1()]|wake one waiter
+// |xref:nng_cv_alloc.3supp.adoc[nng_cv_alloc()]|allocate condition variable
+// |xref:nng_cv_free.3supp.adoc[nng_cv_free()]|free condition variable
+// |xref:nng_cv_until.3supp.adoc[nng_cv_until()]|wait for condition or timeout
+// |xref:nng_cv_wait.3supp.adoc[nng_cv_wait()]|wait for condition
+// |xref:nng_cv_wake.3supp.adoc[nng_cv_wake()]|wake all waiters
+// |xref:nng_cv_wake1.3supp.adoc[nng_cv_wake1()]|wake one waiter
 // |xref:nng_id_map.3supp.adoc[nng_id_map]|identifier based mapping table
 // |xref:nng_msleep.3supp.adoc[nng_msleep()]|sleep for milliseconds
 // |xref:nng_mtx_alloc.3supp.adoc[nng_mtx_alloc()]|allocate mutex
 // |xref:nng_mtx_free.3supp.adoc[nng_mtx_free()]|free mutex
 // |xref:nng_mtx_lock.3supp.adoc[nng_mtx_lock()]|lock mutex
 // |xref:nng_mtx_unlock.3supp.adoc[nng_mtx_unlock()]|unlock mutex
-|xref:nng_opts_parse.3supp.adoc[nng_opts_parse()]|parse command line options
+// |xref:nng_opts_parse.3supp.adoc[nng_opts_parse()]|parse command line options
 // |xref:nng_random.3supp.adoc[nng_random()]|get random number
-|xref:nng_socket_pair.3supp.adoc[nng_socket_pair()]|create connected pair of BSD sockets
-|xref:nng_thread_create.3supp.adoc[nng_thread_create()]|create thread
-|xref:nng_thread_destroy.3supp.adoc[nng_thread_destroy()]|reap thread
-|xref:nng_thread_set_name.3supp.adoc[nng_thread_set_name()]|set thread name
-|===
+// |xref:nng_socket_pair.3supp.adoc[nng_socket_pair()]|create connected pair of BSD sockets
+// |xref:nng_thread_create.3supp.adoc[nng_thread_create()]|create thread
+// |xref:nng_thread_destroy.3supp.adoc[nng_thread_destroy()]|reap thread
+// |xref:nng_thread_set_name.3supp.adoc[nng_thread_set_name()]|set thread name
+// |===
 
 === Byte Streams
 

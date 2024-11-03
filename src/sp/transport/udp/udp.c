@@ -9,8 +9,10 @@
 #include "core/aio.h"
 #include "core/defs.h"
 #include "core/idhash.h"
+#include "core/message.h"
 #include "core/nng_impl.h"
 #include "core/options.h"
+#include "core/pipe.h"
 #include "core/platform.h"
 #include "nng/nng.h"
 
@@ -62,6 +64,10 @@ typedef enum udp_disc_reason {
 
 #ifndef NNG_UDP_RECVMAX
 #define NNG_UDP_RECVMAX 65000 // largest permitted by spec
+#endif
+
+#ifndef NNG_UDP_COPYMAX // threshold for copying instead of loan up
+#define NNG_UDP_COPYMAX 1024
 #endif
 
 #ifndef NNG_UDP_REFRESH
@@ -211,14 +217,22 @@ struct udp_ep {
 	nng_duration refresh;    // refresh interval for connections in seconds
 	udp_sp_msg   rx_msg;     // contains the received message header
 	uint16_t     rcvmax;     // max payload, trimmed to uint16_t
-	uint16_t     short_msg;
+	uint16_t     copymax;
 	udp_txring   tx_ring;
 	nni_time     next_wake;
 	nni_aio_completions complq;
 
-#ifdef NNG_ENABLE_STATS
 	nni_stat_item st_rcv_max;
-#endif
+	nni_stat_item st_rcv_reorder;
+	nni_stat_item st_rcv_toobig;
+	nni_stat_item st_rcv_nomatch;
+	nni_stat_item st_rcv_copy;
+	nni_stat_item st_rcv_nocopy;
+	nni_stat_item st_rcv_nobuf;
+	nni_stat_item st_snd_toobig;
+	nni_stat_item st_snd_nobuf;
+	nni_stat_item st_peer_inactive;
+	nni_stat_item st_copy_max;
 };
 
 static void udp_ep_hold(udp_ep *ep);
@@ -242,8 +256,10 @@ udp_pipe_alloc(udp_pipe **pp, udp_ep *ep, uint32_t peer_id, nng_sockaddr *sa)
 		NNI_FREE_STRUCT(p);
 		return (rv);
 	}
+	udp_ep_hold(ep);
 	now = nni_clock();
 	nni_aio_list_init(&p->rx_aios);
+	nni_lmq_init(&p->rx_mq, NNG_UDP_RXQUEUE_LEN);
 	p->ep        = ep;
 	p->dialer    = ep->dialer;
 	p->self_seq  = nni_random();
@@ -255,8 +271,6 @@ udp_pipe_alloc(udp_pipe **pp, udp_ep *ep, uint32_t peer_id, nng_sockaddr *sa)
 	p->expire = now + (p->dialer ? (5 * NNI_SECOND) : UDP_PIPE_TIMEOUT(p));
 	p->rcvmax = ep->rcvmax;
 	*pp       = p;
-	nni_lmq_init(&p->rx_mq, NNG_UDP_RXQUEUE_LEN);
-	udp_ep_hold(ep);
 	return (0);
 }
 
@@ -314,11 +328,18 @@ udp_pipe_destroy(udp_pipe *p)
 {
 	nng_msg *m;
 
+	if (p->self_id != 0) {
+		nni_id_remove(&p->ep->pipes, p->self_id);
+		p->self_id = 0;
+	}
+	nni_list_node_remove(&p->node);
+
 	// call with ep->mtx lock held
 	while (!nni_lmq_empty(&p->rx_mq)) {
 		nni_lmq_get(&p->rx_mq, &m);
 		nni_msg_free(m);
 	}
+	nni_lmq_fini(&p->rx_mq);
 	NNI_ASSERT(nni_list_empty(&p->rx_aios));
 
 	NNI_FREE_STRUCT(p);
@@ -331,8 +352,6 @@ udp_pipe_fini(void *arg)
 	udp_ep   *ep = p->ep;
 
 	nni_mtx_lock(&ep->mtx);
-	nni_id_remove(&ep->pipes, p->self_id);
-
 	udp_pipe_destroy(p);
 	udp_ep_rele(ep); // releases lock
 }
@@ -361,9 +380,12 @@ udp_check_pipe_sequence(udp_pipe *p, uint32_t seq)
 	delta = (int32_t) (seq - p->peer_seq);
 	if (delta < 0) {
 		// out of order delivery
+		nni_stat_inc(&p->ep->st_rcv_reorder, 1);
 		return (false);
 	}
-	// TODO: bump a stat for misses if delta > 0.
+	if (delta > 0) {
+		nni_stat_inc(&p->ep->st_rcv_reorder, 1);
+	}
 	p->peer_seq = seq + 1; // expected next sequence number
 	return (true);
 }
@@ -450,7 +472,7 @@ udp_queue_tx(udp_ep *ep, nng_sockaddr *sa, udp_sp_msg *msg, nni_msg *payload)
 
 	if (ring->count == ring->size || !ep->started) {
 		// ring is full
-		// TODO: bump a stat
+		nni_stat_inc(&ep->st_snd_nobuf, 1);
 		if (payload != NULL) {
 			nni_msg_free(payload);
 		}
@@ -590,8 +612,7 @@ udp_recv_disc(udp_ep *ep, udp_sp_disc *disc, nng_sockaddr *sa)
 		// For now we aren't validating the sequence numbers.
 		// This allows for an out of order DISC to cause the
 		// connection to be dropped, but it should self heal.
-		p->closed  = true;
-		p->self_id = 0; // prevent it from being identified later
+		p->closed = true;
 		while ((aio = nni_list_first(&p->rx_aios)) != NULL) {
 			nni_aio_list_remove(aio);
 			nni_aio_finish_error(aio, NNG_ECLOSED);
@@ -619,13 +640,14 @@ udp_recv_data(udp_ep *ep, udp_sp_data *dreq, size_t len, nng_sockaddr *sa)
 	// NB: Peer ID endianness does not matter, as long we use it
 	// consistently.
 	if ((p = udp_find_pipe(ep, peer_id, send_id)) == NULL) {
-		// TODO: Bump a stat...
+		nni_stat_inc(&ep->st_rcv_nomatch, 1);
 		udp_send_disc_full(ep, sa, send_id, peer_id, 0, DISC_NOTCONN);
 		// Question: how do we store the sockaddr for that?
 		return;
 	}
 	if (p->peer_id == 0) {
 		// connection isn't formed yet ... send another CREQ
+		nni_stat_inc(&ep->st_rcv_nomatch, 1);
 		udp_send_creq(ep, p);
 		return;
 	}
@@ -635,6 +657,7 @@ udp_recv_data(udp_ep *ep, udp_sp_data *dreq, size_t len, nng_sockaddr *sa)
 	// Make sure the message wasn't truncated, and that it fits within
 	// our maximum agreed upon payload.
 	if ((dreq->us_length > len) || (dreq->us_length > p->rcvmax)) {
+		nni_stat_inc(&ep->st_rcv_toobig, 1);
 		udp_send_disc(ep, p, DISC_MSGSIZE);
 		return;
 	}
@@ -650,32 +673,37 @@ udp_recv_data(udp_ep *ep, udp_sp_data *dreq, size_t len, nng_sockaddr *sa)
 
 	if (!udp_check_pipe_sequence(p, dreq->us_sequence)) {
 		// out of order delivery, drop it
-		// TODO: bump a stat
 		return;
 	}
 
 	if (nni_lmq_full(&p->rx_mq)) {
-		// bump a NOBUF stat
+		nni_stat_inc(&ep->st_rcv_nobuf, 1);
 		return;
 	}
 
 	// Short message, just alloc and copy
-	if (len <= ep->short_msg) {
+	if (len <= ep->copymax) {
+		nni_stat_inc(&ep->st_rcv_copy, 1);
 		if (nng_msg_alloc(&msg, len) != 0) {
-			// TODO: bump a stat
+			if (p->npipe != NULL) {
+				nni_pipe_bump_error(p->npipe, NNG_ENOMEM);
+			}
 			return;
 		}
 		nni_msg_set_address(msg, sa);
-		nni_msg_clear(msg);
-		nni_msg_append(msg, nni_msg_body(ep->rx_payload), len);
+		memcpy(nni_msg_body(msg), nni_msg_body(ep->rx_payload), len);
 		nni_lmq_put(&p->rx_mq, msg);
+		nni_msg_realloc(ep->rx_payload, ep->rcvmax);
 	} else {
+		nni_stat_inc(&ep->st_rcv_nocopy, 1);
 		// Message size larger than copy break, do zero copy
 		msg = ep->rx_payload;
 		if (nng_msg_alloc(&ep->rx_payload,
 		        ep->rcvmax + sizeof(ep->rx_msg)) != 0) {
-			// TODO: bump a stat
 			ep->rx_payload = msg; // make sure we put it back
+			if (p->npipe != NULL) {
+				nni_pipe_bump_error(p->npipe, NNG_ENOMEM);
+			}
 			return;
 		}
 
@@ -898,8 +926,6 @@ udp_rx_cb(void *arg)
 		hdr->data.us_length    = NNI_GET16LE(&hdr->data.us_length);
 #endif
 
-		// TODO: verify that incoming type matches us!
-
 		switch (hdr->data.us_op_code) {
 		case OPCODE_DATA:
 			udp_recv_data(ep, &hdr->data, n, sa);
@@ -943,6 +969,7 @@ udp_pipe_send(void *arg, nni_aio *aio)
 	udp_ep     *ep;
 	udp_sp_data dreq;
 	nng_msg    *msg;
+	size_t      count = 0;
 
 	if (nni_aio_begin(aio) != 0) {
 		// No way to give the message back to the  protocol,
@@ -955,6 +982,10 @@ udp_pipe_send(void *arg, nni_aio *aio)
 	msg = nni_aio_get_msg(aio);
 	ep  = p->ep;
 
+	if (msg != NULL) {
+		count = nni_msg_len(msg) + nni_msg_header_len(msg);
+	}
+
 	nni_mtx_lock(&ep->mtx);
 	if ((nni_msg_len(msg) + nni_msg_header_len(msg)) > p->sndmax) {
 		nni_mtx_unlock(&ep->mtx);
@@ -962,7 +993,7 @@ udp_pipe_send(void *arg, nni_aio *aio)
 		// floor. this is on the sender, so there isn't a compelling
 		// need to disconnect the pipe, since it we're not being
 		// "ill-behaved" to our peer.
-		// TODO: bump a stat
+		nni_stat_inc(&ep->st_snd_toobig, 1);
 		nni_msg_free(msg);
 		return;
 	}
@@ -973,13 +1004,13 @@ udp_pipe_send(void *arg, nni_aio *aio)
 	dreq.us_sender_id = p->self_id;
 	dreq.us_peer_id   = p->peer_id;
 	dreq.us_sequence  = p->self_seq++;
-	dreq.us_length =
-	    msg != NULL ? nni_msg_len(msg) + nni_msg_header_len(msg) : 0;
+	dreq.us_length    = (uint16_t) count;
 
 	// Just queue it, or fail it.
 	udp_queue_tx(ep, &p->peer_addr, (void *) &dreq, msg);
 	nni_mtx_unlock(&ep->mtx);
-	nni_aio_finish(aio, 0, dreq.us_length);
+
+	nni_aio_finish(aio, 0, count);
 }
 
 static void
@@ -1119,6 +1150,12 @@ udp_ep_rele(udp_ep *ep)
 	nni_aio_fini(&ep->resaio);
 	nni_aio_fini(&ep->tx_aio);
 	nni_aio_fini(&ep->rx_aio);
+
+	for (int i = 0; i < ep->tx_ring.size; i++) {
+		nni_msg_free(ep->tx_ring.descs[i].payload);
+		ep->tx_ring.descs[i].payload = NULL;
+	}
+	nni_msg_free(ep->rx_payload); // safe even if msg is null
 	nni_id_map_fini(&ep->pipes);
 	NNI_FREE_STRUCTS(ep->tx_ring.descs, ep->tx_ring.size);
 	NNI_FREE_STRUCT(ep);
@@ -1165,20 +1202,21 @@ udp_ep_close(void *arg)
 
 	// close all pipes
 	uint32_t cursor = 0;
-	while (nni_id_visit(&ep->pipes, NULL, (void **) &p, &cursor)) {
-		p->closed = true;
+	uint64_t id;
+
+	// first we grab the connpipes that are not closed upstream
+	while ((p = nni_list_first(&ep->connpipes)) != NULL) {
+		udp_pipe_destroy(p);
+		ep->refcnt--;
+	}
+	while (nni_id_visit(&ep->pipes, &id, (void **) &p, &cursor)) {
 		if (p->peer_id != 0) {
 			udp_send_disc(ep, p, DISC_CLOSED);
 		}
+		p->closed = true;
 		while ((aio = nni_list_first(&p->rx_aios)) != NULL) {
 			nni_aio_list_remove(aio);
 			nni_aio_finish_error(aio, NNG_ECLOSED);
-		}
-		if (p->npipe == NULL) {
-			nni_list_remove(&ep->connpipes, p);
-			nni_id_remove(&ep->pipes, p->self_id);
-			udp_pipe_destroy(p);
-			ep->refcnt--;
 		}
 	}
 	nni_aio_close(&ep->resaio);
@@ -1208,31 +1246,33 @@ udp_timer_cb(void *arg)
 	ep->next_wake = NNI_TIME_NEVER;
 	while (nni_id_visit(&ep->pipes, NULL, (void **) &p, &cursor)) {
 
-		if (p->closed) {
-			if (p->npipe == NULL) {
-				// pipe closed, but we have to clean it up
-				// ourselves
-				nni_id_remove(&ep->pipes, p->self_id);
-				udp_pipe_destroy(p);
-				ep->refcnt--;
-			}
-			continue;
-		}
-
 		if (now > p->expire) {
 			char     buf[128];
 			nni_aio *aio;
 			nng_log_info("NNG-UDP-INACTIVE",
 			    "Pipe peer %s timed out due to inactivity",
 			    nng_str_sockaddr(&p->peer_addr, buf, sizeof(buf)));
+
+			// Possibly alert the dialer, so it can restart a new
+			// attempt.
 			if ((ep->dialer) && (p->peer_id == 0) &&
 			    (aio = nni_list_first(&ep->connaios))) {
 				nni_aio_list_remove(aio);
 				nni_aio_finish_error(aio, NNG_ETIMEDOUT);
 			}
+
+			// If we're still on the connect list, then we need
+			// take responsibility for cleaning this up.
+			if (nni_list_node_active(&p->node)) {
+				udp_pipe_destroy(p);
+				ep->refcnt--;
+				continue;
+			}
+
 			// This will probably not be received by the peer,
 			// since we aren't getting anything from them. But
 			// having it on the wire may help debugging later.
+			nni_stat_inc(&ep->st_peer_inactive, 1);
 			udp_send_disc(ep, p, DISC_INACTIVE);
 			continue;
 		}
@@ -1253,7 +1293,8 @@ udp_timer_cb(void *arg)
 }
 
 static int
-udp_ep_init(udp_ep **epp, nng_url *url, nni_sock *sock)
+udp_ep_init(udp_ep **epp, nng_url *url, nni_sock *sock, nni_dialer *dialer,
+    nni_listener *listener)
 {
 	udp_ep *ep;
 	int     rv;
@@ -1276,7 +1317,7 @@ udp_ep_init(udp_ep **epp, nng_url *url, nni_sock *sock)
 		ep->af = NNG_AF_INET;
 	} else if (strcmp(url->u_scheme, "udp6") == 0) {
 		ep->af = NNG_AF_INET6;
-        } else {
+	} else {
 		NNI_FREE_STRUCT(ep);
 		return (NNG_EADDRINVAL);
 	}
@@ -1286,6 +1327,7 @@ udp_ep_init(udp_ep **epp, nng_url *url, nni_sock *sock)
 	ep->url              = url;
 	ep->refresh          = NNG_UDP_REFRESH; // one minute by default
 	ep->rcvmax           = NNG_UDP_RECVMAX;
+	ep->copymax          = NNG_UDP_COPYMAX;
 	ep->refcnt           = 1;
 	if ((rv = nni_msg_alloc(&ep->rx_payload,
 	              ep->rcvmax + sizeof(ep->rx_msg)) != 0)) {
@@ -1305,7 +1347,6 @@ udp_ep_init(udp_ep **epp, nng_url *url, nni_sock *sock)
 	nni_aio_init(&ep->resaio, udp_resolv_cb, ep);
 	nni_aio_completions_init(&ep->complq);
 
-#ifdef NNG_ENABLE_STATS
 	static const nni_stat_info rcv_max_info = {
 		.si_name   = "rcv_max",
 		.si_desc   = "maximum receive size",
@@ -1313,8 +1354,112 @@ udp_ep_init(udp_ep **epp, nng_url *url, nni_sock *sock)
 		.si_unit   = NNG_UNIT_BYTES,
 		.si_atomic = true,
 	};
+	static const nni_stat_info rcv_reorder_info = {
+		.si_name   = "rcv_reorder",
+		.si_desc   = "messages received out of order",
+		.si_type   = NNG_STAT_COUNTER,
+		.si_unit   = NNG_UNIT_MESSAGES,
+		.si_atomic = true,
+	};
+	static const nni_stat_info rcv_toobig_info = {
+		.si_name   = "rcv_toobig",
+		.si_desc   = "received messages rejected because too big",
+		.si_type   = NNG_STAT_COUNTER,
+		.si_unit   = NNG_UNIT_MESSAGES,
+		.si_atomic = true,
+	};
+	static const nni_stat_info rcv_nomatch_info = {
+		.si_name   = "rcv_nomatch",
+		.si_desc   = "received messages without a matching connection",
+		.si_type   = NNG_STAT_COUNTER,
+		.si_unit   = NNG_UNIT_MESSAGES,
+		.si_atomic = true,
+	};
+	static const nni_stat_info rcv_copy_info = {
+		.si_name   = "rcv_copy",
+		.si_desc   = "received messages copied (small)",
+		.si_type   = NNG_STAT_COUNTER,
+		.si_unit   = NNG_UNIT_MESSAGES,
+		.si_atomic = true,
+	};
+	static const nni_stat_info rcv_nocopy_info = {
+		.si_name   = "rcv_nocopy",
+		.si_desc   = "received messages zero copy (large)",
+		.si_type   = NNG_STAT_COUNTER,
+		.si_unit   = NNG_UNIT_MESSAGES,
+		.si_atomic = true,
+	};
+	static const nni_stat_info rcv_nobuf_info = {
+		.si_name   = "rcv_nobuf",
+		.si_desc   = "received messages dropped no buffer",
+		.si_type   = NNG_STAT_COUNTER,
+		.si_unit   = NNG_UNIT_MESSAGES,
+		.si_atomic = true,
+	};
+	static const nni_stat_info snd_toobig_info = {
+		.si_name   = "snd_toobig",
+		.si_desc   = "sent messages rejected because too big",
+		.si_type   = NNG_STAT_COUNTER,
+		.si_unit   = NNG_UNIT_MESSAGES,
+		.si_atomic = true,
+	};
+	static const nni_stat_info snd_nobuf_info = {
+		.si_name   = "snd_nobuf",
+		.si_desc   = "sent messages dropped no buffer",
+		.si_type   = NNG_STAT_COUNTER,
+		.si_unit   = NNG_UNIT_MESSAGES,
+		.si_atomic = true,
+	};
+	static const nni_stat_info peer_inactive_info = {
+		.si_name   = "peer_inactive",
+		.si_desc   = "connections closed due to inactive peer",
+		.si_type   = NNG_STAT_COUNTER,
+		.si_unit   = NNG_UNIT_EVENTS,
+		.si_atomic = true,
+	};
+	static const nni_stat_info copy_max_info = {
+		.si_name   = "rcv_copy_max",
+		.si_desc   = "threshold to copy instead of loan-up",
+		.si_type   = NNG_STAT_LEVEL,
+		.si_unit   = NNG_UNIT_BYTES,
+		.si_atomic = true,
+	};
+
 	nni_stat_init(&ep->st_rcv_max, &rcv_max_info);
-#endif
+	nni_stat_init(&ep->st_copy_max, &copy_max_info);
+	nni_stat_init(&ep->st_rcv_copy, &rcv_copy_info);
+	nni_stat_init(&ep->st_rcv_nocopy, &rcv_nocopy_info);
+	nni_stat_init(&ep->st_rcv_reorder, &rcv_reorder_info);
+	nni_stat_init(&ep->st_rcv_toobig, &rcv_toobig_info);
+	nni_stat_init(&ep->st_rcv_nomatch, &rcv_nomatch_info);
+	nni_stat_init(&ep->st_rcv_nobuf, &rcv_nobuf_info);
+	nni_stat_init(&ep->st_snd_toobig, &snd_toobig_info);
+	nni_stat_init(&ep->st_snd_nobuf, &snd_nobuf_info);
+	nni_stat_init(&ep->st_peer_inactive, &peer_inactive_info);
+
+	if (listener) {
+		nni_listener_add_stat(listener, &ep->st_rcv_max);
+		nni_listener_add_stat(listener, &ep->st_copy_max);
+		nni_listener_add_stat(listener, &ep->st_rcv_copy);
+		nni_listener_add_stat(listener, &ep->st_rcv_nocopy);
+		nni_listener_add_stat(listener, &ep->st_rcv_reorder);
+		nni_listener_add_stat(listener, &ep->st_rcv_toobig);
+		nni_listener_add_stat(listener, &ep->st_rcv_nomatch);
+		nni_listener_add_stat(listener, &ep->st_rcv_nobuf);
+		nni_listener_add_stat(listener, &ep->st_snd_toobig);
+		nni_listener_add_stat(listener, &ep->st_snd_nobuf);
+	} else {
+		nni_dialer_add_stat(dialer, &ep->st_rcv_max);
+		nni_dialer_add_stat(dialer, &ep->st_copy_max);
+		nni_dialer_add_stat(dialer, &ep->st_rcv_copy);
+		nni_dialer_add_stat(dialer, &ep->st_rcv_nocopy);
+		nni_dialer_add_stat(dialer, &ep->st_rcv_reorder);
+		nni_dialer_add_stat(dialer, &ep->st_rcv_toobig);
+		nni_dialer_add_stat(dialer, &ep->st_rcv_nomatch);
+		nni_dialer_add_stat(dialer, &ep->st_rcv_nobuf);
+		nni_dialer_add_stat(dialer, &ep->st_snd_toobig);
+		nni_dialer_add_stat(dialer, &ep->st_snd_nobuf);
+	}
 
 	// schedule our timer callback - forever for now
 	// adjusted automatically as we add pipes or other
@@ -1356,13 +1501,10 @@ udp_dialer_init(void **dp, nng_url *url, nni_dialer *ndialer)
 		return (rv);
 	}
 
-	if ((rv = udp_ep_init(&ep, url, sock)) != 0) {
+	if ((rv = udp_ep_init(&ep, url, sock, ndialer, NULL)) != 0) {
 		return (rv);
 	}
 
-#ifdef NNG_ENABLE_STATS
-	nni_dialer_add_stat(ndialer, &ep->st_rcv_max);
-#endif
 	*dp = ep;
 	return (0);
 }
@@ -1370,26 +1512,21 @@ udp_dialer_init(void **dp, nng_url *url, nni_dialer *ndialer)
 static int
 udp_listener_init(void **lp, nng_url *url, nni_listener *nlistener)
 {
-	udp_ep   *ep;
-	int       rv;
-	nni_sock *sock = nni_listener_sock(nlistener);
+	udp_ep      *ep;
+	int          rv;
+	nni_sock    *sock = nni_listener_sock(nlistener);
+	nng_sockaddr sa;
 
 	// Check for invalid URL components.
-	if ((rv = udp_check_url(url, true)) != 0) {
+	if (((rv = udp_check_url(url, true)) != 0) ||
+	    ((rv = nni_url_to_address(&sa, url)) != 0)) {
 		return (rv);
 	}
 
-	if ((rv = udp_ep_init(&ep, url, sock)) != 0) {
+	if ((rv = udp_ep_init(&ep, url, sock, NULL, nlistener)) != 0) {
 		return (rv);
 	}
-
-	if ((rv = nni_url_to_address(&ep->self_sa, url)) != 0) {
-		return (rv);
-	}
-
-#ifdef NNG_ENABLE_STATS
-	nni_listener_add_stat(nlistener, &ep->st_rcv_max);
-#endif
+	ep->self_sa = sa;
 
 	*lp = ep;
 	return (0);
@@ -1632,6 +1769,9 @@ udp_ep_set_recvmaxsz(void *arg, const void *v, size_t sz, nni_opt_type t)
 	size_t  val;
 	int     rv;
 	if ((rv = nni_copyin_size(&val, v, sz, 0, 65000, t)) == 0) {
+		if ((val == 0) || (val > 65000)) {
+			val = 65000;
+		}
 		nni_mtx_lock(&ep->mtx);
 		if (ep->started) {
 			nni_mtx_unlock(&ep->mtx);
@@ -1639,9 +1779,38 @@ udp_ep_set_recvmaxsz(void *arg, const void *v, size_t sz, nni_opt_type t)
 		}
 		ep->rcvmax = (uint16_t) val;
 		nni_mtx_unlock(&ep->mtx);
-#ifdef NNG_ENABLE_STATS
 		nni_stat_set_value(&ep->st_rcv_max, val);
-#endif
+	}
+	return (rv);
+}
+
+static int
+udp_ep_get_copymax(void *arg, void *v, size_t *szp, nni_opt_type t)
+{
+	udp_ep *ep = arg;
+	int     rv;
+
+	nni_mtx_lock(&ep->mtx);
+	rv = nni_copyout_size(ep->copymax, v, szp, t);
+	nni_mtx_unlock(&ep->mtx);
+	return (rv);
+}
+
+static int
+udp_ep_set_copymax(void *arg, const void *v, size_t sz, nni_opt_type t)
+{
+	udp_ep *ep = arg;
+	size_t  val;
+	int     rv;
+	if ((rv = nni_copyin_size(&val, v, sz, 0, 65000, t)) == 0) {
+		nni_mtx_lock(&ep->mtx);
+		if (ep->started) {
+			nni_mtx_unlock(&ep->mtx);
+			return (NNG_EBUSY);
+		}
+		ep->copymax = (uint16_t) val;
+		nni_mtx_unlock(&ep->mtx);
+		nni_stat_set_value(&ep->st_copy_max, val);
 	}
 	return (rv);
 }
@@ -1735,6 +1904,11 @@ static const nni_option udp_ep_opts[] = {
 	    .o_name = NNG_OPT_RECVMAXSZ,
 	    .o_get  = udp_ep_get_recvmaxsz,
 	    .o_set  = udp_ep_set_recvmaxsz,
+	},
+	{
+	    .o_name = NNG_OPT_UDP_COPY_MAX,
+	    .o_get  = udp_ep_get_copymax,
+	    .o_set  = udp_ep_set_copymax,
 	},
 	{
 	    .o_name = NNG_OPT_URL,
