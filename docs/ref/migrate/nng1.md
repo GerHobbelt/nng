@@ -5,8 +5,8 @@ This guide should help in migrating applications to use NNG 2.0.
 
 ## Nanomsg Compatibility
 
-Applications using the legacy `libnanomsg` API will have to be updated to native NNG interfaces.
-See the [Migration Guide for libnanomsg](nanomsg.md) for details.
+Applications using the legacy `libnanomsg` API will have to be updated to native _NNG_ interfaces.
+See the [Migrating From libnanomsg](nanomsg.md) chapter for details.
 
 ## Transport Specific Functions
 
@@ -30,8 +30,8 @@ Additionally, the header files containing these functions have been removed, suc
 
 The `NNG_OPT_WSS_REQUEST_HEADERS` and `NNG_OPT_WSS_RESPONSE_HEADERS` aliases for
 `NNG_OPT_WS_OPT_WS_REQUEST_HEADERS` and `NNG_OPT_WS_RESPONSE_HEADERS` have been removed.
-Just convert any use of them to `NNG_OPT_WS_REQUST_HEADERS` or
-`NNG_OPT_WS_RESPOSNE_HEADERS` as appropriate.
+Just convert any use of them to `NNG_OPT_WS_REQUEST_HEADERS` or
+`NNG_OPT_WS_RESPONSE_HEADERS` as appropriate.
 
 ## Option Functions
 

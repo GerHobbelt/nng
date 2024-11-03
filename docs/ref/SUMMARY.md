@@ -6,17 +6,15 @@
 
 - [API Reference](./api/index.md)
 
-  - [Messages](./api/msg/index.md)
+  - [Messages](./api/msg.md)
 
-    - [nng_msg](./api/msg/nng_msg.md)
-    - [nng_msg_body](./api/msg/nng_msg_body.md)
-    - [nng_msg_header](./api/msg/nng_msg_header.md)
-    - [nng_msg_pipe](./api/msg/nng_msg_pipe.md)
+  - [Memory](./api/memory.md)
 
-  - [Asynchronous I/O Operations](./api/aio/index.md)
+  - [Time](./api/time.md)
 
-    - [nng_aio](./api/aio/nng_aio.md)
-    - [aio_cancel](./api/aio/aio_cancel.md)
+  - [URLs](./api/url.md)
+
+  - [Asynchronous I/O](./api/aio.md)
 
   - [Synchronization](./api/synch.md)
 
@@ -26,20 +24,13 @@
 
   - [Statistics](./api/stats.md)
 
-  - [Utility Functions](./api/util/index.md)
+  - [Errors](./api/errors.md)
 
-    - [nng_alloc](./api/util/nng_alloc.md)
-    - [nng_clock](./api/util/nng_clock.md)
-    - [nng_duration](./api/util/nng_duration.md)
-    - [nng_id_map](./api/util/nng_id_map.md)
-    - [nng_msleep](./api/util/nng_msleep.md)
-    - [nng_opts_parse](./api/util/nng_opts_parse.md)
-    - [nng_random](./api/util/nng_random.md)
-    - [nng_socket_pair](./api/util/nng_socket_pair.md)
-    - [nng_strdup](./api/util/nng_strdup.md)
-    - [nng_strerror](./api/util/nng_strerror.md)
-    - [nng_url](./api/util/nng_url.md)
-    - [nng_version](./api/util/nng_version.md)
+  - [Miscellaneous](./api/misc.md)
+
+  - [ID Map](./api/id_map.md)
+
+  - [Command Options](./api/cmd_opts.md)
 
 - [Protocols](./proto/index.md)
 
@@ -60,5 +51,10 @@
   - [Inter-Process Transport](./tran/ipc.md)
   - [BSD Socket (Experimental)](./tran/socket.md)
   - [UDP Transport (Experimental)](./tran/udp.md)
+
+- [Migration Guides](./migrate/index.md)
+
+  - [Migrating from NNG 1.x](./migrate/nng1.md)
+  - [Migrating from libnanomsg](./migrate/nanomsg.md)
 
 [Index](./indexing.md)
