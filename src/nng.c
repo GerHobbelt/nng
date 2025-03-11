@@ -272,7 +272,7 @@ nng_ctx_close(nng_ctx c)
 	int      rv;
 	nni_ctx *ctx;
 
-	if ((rv = nni_ctx_find(&ctx, c.id, true)) != 0) {
+	if ((rv = nni_ctx_find(&ctx, c.id)) != 0) {
 		return (rv);
 	}
 	// no release, close releases implicitly.
@@ -293,7 +293,7 @@ nng_ctx_recvmsg(nng_ctx cid, nng_msg **msgp, int flags)
 	nni_aio  aio;
 	nni_ctx *ctx;
 
-	if ((rv = nni_ctx_find(&ctx, cid.id, false)) != 0) {
+	if ((rv = nni_ctx_find(&ctx, cid.id)) != 0) {
 		return (rv);
 	}
 
@@ -326,7 +326,7 @@ nng_ctx_recv(nng_ctx cid, nng_aio *aio)
 	int      rv;
 	nni_ctx *ctx;
 
-	if ((rv = nni_ctx_find(&ctx, cid.id, false)) != 0) {
+	if ((rv = nni_ctx_find(&ctx, cid.id)) != 0) {
 		if (nni_aio_begin(aio) == 0) {
 			nni_aio_finish_error(aio, rv);
 		}
@@ -348,7 +348,7 @@ nng_ctx_send(nng_ctx cid, nng_aio *aio)
 		}
 		return;
 	}
-	if ((rv = nni_ctx_find(&ctx, cid.id, false)) != 0) {
+	if ((rv = nni_ctx_find(&ctx, cid.id)) != 0) {
 		if (nni_aio_begin(aio) == 0) {
 			nni_aio_finish_error(aio, rv);
 		}
@@ -368,7 +368,7 @@ nng_ctx_sendmsg(nng_ctx cid, nng_msg *msg, int flags)
 	if (msg == NULL) {
 		return (NNG_EINVAL);
 	}
-	if ((rv = nni_ctx_find(&ctx, cid.id, false)) != 0) {
+	if ((rv = nni_ctx_find(&ctx, cid.id)) != 0) {
 		return (rv);
 	}
 
@@ -403,7 +403,7 @@ ctx_get(nng_ctx id, const char *n, void *v, size_t *szp, nni_type t)
 	nni_ctx *ctx;
 	int      rv;
 
-	if ((rv = nni_ctx_find(&ctx, id.id, false)) != 0) {
+	if ((rv = nni_ctx_find(&ctx, id.id)) != 0) {
 		return (rv);
 	}
 	rv = nni_ctx_getopt(ctx, n, v, szp, t);
@@ -436,18 +436,6 @@ nng_ctx_get_uint64(nng_ctx id, const char *n, uint64_t *v)
 }
 
 int
-nng_ctx_get_string(nng_ctx id, const char *n, char **v)
-{
-	return (ctx_get(id, n, v, NULL, NNI_TYPE_STRING));
-}
-
-int
-nng_ctx_get_ptr(nng_ctx id, const char *n, void **v)
-{
-	return (ctx_get(id, n, v, NULL, NNI_TYPE_POINTER));
-}
-
-int
 nng_ctx_get_ms(nng_ctx id, const char *n, nng_duration *v)
 {
 	return (ctx_get(id, n, v, NULL, NNI_TYPE_DURATION));
@@ -459,7 +447,7 @@ ctx_set(nng_ctx id, const char *n, const void *v, size_t sz, nni_type t)
 	nni_ctx *ctx;
 	int      rv;
 
-	if ((rv = nni_ctx_find(&ctx, id.id, false)) != 0) {
+	if ((rv = nni_ctx_find(&ctx, id.id)) != 0) {
 		return (rv);
 	}
 	rv = nni_ctx_setopt(ctx, n, v, sz, t);
@@ -495,19 +483,6 @@ int
 nng_ctx_set_ms(nng_ctx id, const char *n, nng_duration v)
 {
 	return (ctx_set(id, n, &v, sizeof(v), NNI_TYPE_DURATION));
-}
-
-int
-nng_ctx_set_ptr(nng_ctx id, const char *n, void *v)
-{
-	return (ctx_set(id, n, &v, sizeof(v), NNI_TYPE_POINTER));
-}
-
-int
-nng_ctx_set_string(nng_ctx id, const char *n, const char *v)
-{
-	return (
-	    ctx_set(id, n, v, v == NULL ? 0 : strlen(v) + 1, NNI_TYPE_STRING));
 }
 
 int
@@ -789,12 +764,6 @@ nng_dialer_set_ms(nng_dialer id, const char *n, nng_duration v)
 }
 
 int
-nng_dialer_set_ptr(nng_dialer id, const char *n, void *v)
-{
-	return (dialer_set(id, n, &v, sizeof(v), NNI_TYPE_POINTER));
-}
-
-int
 nng_dialer_set_string(nng_dialer id, const char *n, const char *v)
 {
 	return (dialer_set(
@@ -849,12 +818,6 @@ int
 nng_dialer_get_string(nng_dialer id, const char *n, char **v)
 {
 	return (dialer_get(id, n, v, NULL, NNI_TYPE_STRING));
-}
-
-int
-nng_dialer_get_ptr(nng_dialer id, const char *n, void **v)
-{
-	return (dialer_get(id, n, v, NULL, NNI_TYPE_POINTER));
 }
 
 int
@@ -941,12 +904,6 @@ nng_listener_set_ms(nng_listener id, const char *n, nng_duration v)
 }
 
 int
-nng_listener_set_ptr(nng_listener id, const char *n, void *v)
-{
-	return (listener_set(id, n, &v, sizeof(v), NNI_TYPE_POINTER));
-}
-
-int
 nng_listener_set_string(nng_listener id, const char *n, const char *v)
 {
 	return (listener_set(
@@ -1005,12 +962,6 @@ nng_listener_get_string(nng_listener id, const char *n, char **v)
 }
 
 int
-nng_listener_get_ptr(nng_listener id, const char *n, void **v)
-{
-	return (listener_get(id, n, v, NULL, NNI_TYPE_POINTER));
-}
-
-int
 nng_listener_get_ms(nng_listener id, const char *n, nng_duration *v)
 {
 	return (listener_get(id, n, v, NULL, NNI_TYPE_DURATION));
@@ -1044,6 +995,19 @@ nng_listener_set_tls(nng_listener id, nng_tls_config *cfg)
 		return (rv);
 	}
 	rv = nni_listener_set_tls(l, cfg);
+	nni_listener_rele(l);
+	return (rv);
+}
+
+int
+nng_listener_set_security_descriptor(nng_listener id, void *cfg)
+{
+	int           rv;
+	nni_listener *l;
+	if ((rv = nni_listener_find(&l, id.id)) != 0) {
+		return (rv);
+	}
+	rv = nni_listener_set_security_descriptor(l, cfg);
 	nni_listener_rele(l);
 	return (rv);
 }
@@ -1145,19 +1109,6 @@ nng_socket_set_ms(nng_socket id, const char *n, nng_duration v)
 	return (socket_set(id, n, &v, sizeof(v), NNI_TYPE_DURATION));
 }
 
-int
-nng_socket_set_ptr(nng_socket id, const char *n, void *v)
-{
-	return (socket_set(id, n, &v, sizeof(v), NNI_TYPE_POINTER));
-}
-
-int
-nng_socket_set_string(nng_socket id, const char *n, const char *v)
-{
-	return (socket_set(
-	    id, n, v, v == NULL ? 0 : strlen(v) + 1, NNI_TYPE_STRING));
-}
-
 static int
 socket_get(nng_socket s, const char *name, void *val, size_t *szp, nni_type t)
 {
@@ -1194,18 +1145,6 @@ int
 nng_socket_get_uint64(nng_socket id, const char *n, uint64_t *v)
 {
 	return (socket_get(id, n, v, NULL, NNI_TYPE_UINT64));
-}
-
-int
-nng_socket_get_string(nng_socket id, const char *n, char **v)
-{
-	return (socket_get(id, n, v, NULL, NNI_TYPE_STRING));
-}
-
-int
-nng_socket_get_ptr(nng_socket id, const char *n, void **v)
-{
-	return (socket_get(id, n, v, NULL, NNI_TYPE_POINTER));
 }
 
 int
@@ -1491,12 +1430,6 @@ int
 nng_pipe_get_string(nng_pipe id, const char *n, char **v)
 {
 	return (pipe_get(id, n, v, NULL, NNI_TYPE_STRING));
-}
-
-int
-nng_pipe_get_ptr(nng_pipe id, const char *n, void **v)
-{
-	return (pipe_get(id, n, v, NULL, NNI_TYPE_POINTER));
 }
 
 int

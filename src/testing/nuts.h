@@ -85,6 +85,10 @@ extern uint16_t nuts_next_port(void);
 // 64 bytes to ensure no truncation occurs.
 extern void nuts_scratch_addr(const char *, size_t, char *);
 
+// like nuts_scratch_addr, but attempts to use an autobind (0 port)
+// address instead.
+extern void nuts_scratch_addr_zero(const char *, size_t, char *);
+
 // nuts_marry connects two sockets using inproc.  It uses socket
 // pipe hooks to ensure that it does not return before both sockets
 // are fully connected.
@@ -105,6 +109,94 @@ extern int nuts_marry_ex(
 extern void *nuts_stream_send_start(nng_stream *, void *, size_t);
 extern void *nuts_stream_recv_start(nng_stream *, void *, size_t);
 extern int   nuts_stream_wait(void *);
+
+// nuts_tran_ functions are implementation of tesets
+// for transports, to improve code reuse.
+extern void nuts_tran_conn_refused(const char *scheme);
+extern void nuts_tran_dialer_cancel(const char *scheme);
+extern void nuts_tran_dialer_closed(const char *scheme);
+extern void nuts_tran_duplicate_listen(const char *scheme);
+extern void nuts_tran_listener_cancel(const char *scheme);
+extern void nuts_tran_listener_closed(const char *scheme);
+extern void nuts_tran_listen_accept(const char *scheme);
+extern void nuts_tran_exchange(const char *scheme);
+extern void nuts_tran_pipe_id(const char *scheme);
+extern void nuts_tran_huge_msg(const char *scheme, size_t size);
+extern void nuts_tran_msg_props(const char *scheme, void (*check)(nng_msg *));
+extern void nuts_tran_perf(const char *scheme);
+
+#define NUTS_SKIP_IF_IPV6_NEEDED_AND_ABSENT(scheme)                        \
+	do {                                                               \
+		if ((strchr(scheme, '6') != NULL) && (!nuts_has_ipv6())) { \
+			NUTS_SKIP("No IPv6 support present");              \
+			return;                                            \
+		}                                                          \
+	} while (0)
+
+#ifndef NUTS_TRAN_HUGE_MSG_SIZE
+#define NUTS_TRAN_HUGE_MSG_SIZE (1U << 20)
+#endif
+
+#define NUTS_DECLARE_TRAN_TESTS(scheme)                               \
+	void test_##scheme##_conn_refused(void)                       \
+	{                                                             \
+		nuts_tran_conn_refused(#scheme);                      \
+	}                                                             \
+	void test_##scheme##_dialer_cancel(void)                      \
+	{                                                             \
+		nuts_tran_dialer_cancel(#scheme);                     \
+	}                                                             \
+	void test_##scheme##_dialer_closed(void)                      \
+	{                                                             \
+		nuts_tran_dialer_closed(#scheme);                     \
+	}                                                             \
+	void test_##scheme##_duplicate_listen(void)                   \
+	{                                                             \
+		nuts_tran_duplicate_listen(#scheme);                  \
+	}                                                             \
+	void test_##scheme##_listener_cancel(void)                    \
+	{                                                             \
+		nuts_tran_listener_cancel(#scheme);                   \
+	}                                                             \
+	void test_##scheme##_listener_closed(void)                    \
+	{                                                             \
+		nuts_tran_listener_closed(#scheme);                   \
+	}                                                             \
+	void test_##scheme##_listen_accept(void)                      \
+	{                                                             \
+		nuts_tran_listen_accept(#scheme);                     \
+	}                                                             \
+	void test_##scheme##_exchange(void)                           \
+	{                                                             \
+		nuts_tran_exchange(#scheme);                          \
+	}                                                             \
+	void test_##scheme##_pipe_id(void)                            \
+	{                                                             \
+		nuts_tran_pipe_id(#scheme);                           \
+	}                                                             \
+	void test_##scheme##_huge_msg(void)                           \
+	{                                                             \
+		nuts_tran_huge_msg(#scheme, NUTS_TRAN_HUGE_MSG_SIZE); \
+	}                                                             \
+	void test_##scheme##_perf(void)                               \
+	{                                                             \
+		nuts_tran_perf(#scheme);                              \
+	}
+
+// clang-format off
+#define NUTS_INSERT_TRAN_TESTS(scheme) \
+	{ #scheme " conn refused", test_##scheme##_conn_refused }, \
+	{ #scheme " dialer cancel", test_##scheme##_dialer_cancel }, \
+	{ #scheme " dialer closed", test_##scheme##_dialer_closed }, \
+	{ #scheme " duplicate listen", test_##scheme##_duplicate_listen }, \
+	{ #scheme " listener cancel", test_##scheme##_listener_cancel }, \
+	{ #scheme " listener closed", test_##scheme##_listener_closed }, \
+	{ #scheme " listen accept", test_##scheme##_listen_accept }, \
+	{ #scheme " exchange", test_##scheme##_exchange }, \
+	{ #scheme " pipe id", test_##scheme##_pipe_id }, \
+	{ #scheme " huge msg", test_##scheme##_huge_msg }, \
+	{ #scheme " perf", test_##scheme##_perf }
+// clang-format on
 
 // These are TLS certificates.  The client and server are signed with the
 // root.  The server uses CN 127.0.0.1.  Other details are bogus, but
@@ -174,6 +266,14 @@ extern const char *nuts_ecdsa_client_crt;
 		static char nuts_addr_[64];                                \
 		nuts_scratch_addr(scheme, sizeof(nuts_addr_), nuts_addr_); \
 		(var) = nuts_addr_;                                        \
+	} while (0)
+
+#define NUTS_ADDR_ZERO(var, scheme)                          \
+	do {                                                 \
+		static char nuts_addr_[64];                  \
+		nuts_scratch_addr_zero(                      \
+		    scheme, sizeof(nuts_addr_), nuts_addr_); \
+		(var) = nuts_addr_;                          \
 	} while (0)
 
 #define NUTS_OPEN(sock) NUTS_PASS(nng_pair1_open(&(sock)))

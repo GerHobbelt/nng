@@ -230,16 +230,12 @@ NNG_DECL int nng_socket_set_bool(nng_socket, const char *, bool);
 NNG_DECL int nng_socket_set_int(nng_socket, const char *, int);
 NNG_DECL int nng_socket_set_size(nng_socket, const char *, size_t);
 NNG_DECL int nng_socket_set_uint64(nng_socket, const char *, uint64_t);
-NNG_DECL int nng_socket_set_string(nng_socket, const char *, const char *);
-NNG_DECL int nng_socket_set_ptr(nng_socket, const char *, void *);
 NNG_DECL int nng_socket_set_ms(nng_socket, const char *, nng_duration);
 
 NNG_DECL int nng_socket_get_bool(nng_socket, const char *, bool *);
 NNG_DECL int nng_socket_get_int(nng_socket, const char *, int *);
 NNG_DECL int nng_socket_get_size(nng_socket, const char *, size_t *);
 NNG_DECL int nng_socket_get_uint64(nng_socket, const char *, uint64_t *);
-NNG_DECL int nng_socket_get_string(nng_socket, const char *, char **);
-NNG_DECL int nng_socket_get_ptr(nng_socket, const char *, void **);
 NNG_DECL int nng_socket_get_ms(nng_socket, const char *, nng_duration *);
 
 // These functions are used to obtain a file descriptor that will poll
@@ -355,7 +351,6 @@ NNG_DECL int nng_dialer_set_int(nng_dialer, const char *, int);
 NNG_DECL int nng_dialer_set_size(nng_dialer, const char *, size_t);
 NNG_DECL int nng_dialer_set_uint64(nng_dialer, const char *, uint64_t);
 NNG_DECL int nng_dialer_set_string(nng_dialer, const char *, const char *);
-NNG_DECL int nng_dialer_set_ptr(nng_dialer, const char *, void *);
 NNG_DECL int nng_dialer_set_ms(nng_dialer, const char *, nng_duration);
 NNG_DECL int nng_dialer_set_addr(
     nng_dialer, const char *, const nng_sockaddr *);
@@ -366,7 +361,6 @@ NNG_DECL int nng_dialer_get_int(nng_dialer, const char *, int *);
 NNG_DECL int nng_dialer_get_size(nng_dialer, const char *, size_t *);
 NNG_DECL int nng_dialer_get_uint64(nng_dialer, const char *, uint64_t *);
 NNG_DECL int nng_dialer_get_string(nng_dialer, const char *, char **);
-NNG_DECL int nng_dialer_get_ptr(nng_dialer, const char *, void **);
 NNG_DECL int nng_dialer_get_ms(nng_dialer, const char *, nng_duration *);
 NNG_DECL int nng_dialer_get_addr(nng_dialer, const char *, nng_sockaddr *);
 NNG_DECL int nng_dialer_get_tls(nng_dialer, nng_tls_config **);
@@ -377,11 +371,11 @@ NNG_DECL int nng_listener_set_int(nng_listener, const char *, int);
 NNG_DECL int nng_listener_set_size(nng_listener, const char *, size_t);
 NNG_DECL int nng_listener_set_uint64(nng_listener, const char *, uint64_t);
 NNG_DECL int nng_listener_set_string(nng_listener, const char *, const char *);
-NNG_DECL int nng_listener_set_ptr(nng_listener, const char *, void *);
 NNG_DECL int nng_listener_set_ms(nng_listener, const char *, nng_duration);
 NNG_DECL int nng_listener_set_addr(
     nng_listener, const char *, const nng_sockaddr *);
 NNG_DECL int nng_listener_set_tls(nng_listener, nng_tls_config *);
+NNG_DECL int nng_listener_set_security_descriptor(nng_listener, void *);
 NNG_DECL int nng_listener_get_url(nng_listener id, const nng_url **urlp);
 
 NNG_DECL int nng_listener_get_bool(nng_listener, const char *, bool *);
@@ -389,7 +383,6 @@ NNG_DECL int nng_listener_get_int(nng_listener, const char *, int *);
 NNG_DECL int nng_listener_get_size(nng_listener, const char *, size_t *);
 NNG_DECL int nng_listener_get_uint64(nng_listener, const char *, uint64_t *);
 NNG_DECL int nng_listener_get_string(nng_listener, const char *, char **);
-NNG_DECL int nng_listener_get_ptr(nng_listener, const char *, void **);
 NNG_DECL int nng_listener_get_ms(nng_listener, const char *, nng_duration *);
 NNG_DECL int nng_listener_get_addr(nng_listener, const char *, nng_sockaddr *);
 NNG_DECL int nng_listener_get_tls(nng_listener, nng_tls_config **);
@@ -487,8 +480,6 @@ NNG_DECL int nng_ctx_get_bool(nng_ctx, const char *, bool *);
 NNG_DECL int nng_ctx_get_int(nng_ctx, const char *, int *);
 NNG_DECL int nng_ctx_get_size(nng_ctx, const char *, size_t *);
 NNG_DECL int nng_ctx_get_uint64(nng_ctx, const char *, uint64_t *);
-NNG_DECL int nng_ctx_get_string(nng_ctx, const char *, char **);
-NNG_DECL int nng_ctx_get_ptr(nng_ctx, const char *, void **);
 NNG_DECL int nng_ctx_get_ms(nng_ctx, const char *, nng_duration *);
 
 NNG_DECL int nng_ctx_set(nng_ctx, const char *, const void *, size_t);
@@ -496,8 +487,6 @@ NNG_DECL int nng_ctx_set_bool(nng_ctx, const char *, bool);
 NNG_DECL int nng_ctx_set_int(nng_ctx, const char *, int);
 NNG_DECL int nng_ctx_set_size(nng_ctx, const char *, size_t);
 NNG_DECL int nng_ctx_set_uint64(nng_ctx, const char *, uint64_t);
-NNG_DECL int nng_ctx_set_string(nng_ctx, const char *, const char *);
-NNG_DECL int nng_ctx_set_ptr(nng_ctx, const char *, void *);
 NNG_DECL int nng_ctx_set_ms(nng_ctx, const char *, nng_duration);
 
 // nng_alloc is used to allocate memory.  It's intended purpose is for
@@ -554,6 +543,8 @@ NNG_DECL void nng_aio_reap(nng_aio *);
 // AIO to be free, including for the callback to have completed
 // execution.  Therefore, the caller must NOT hold any locks that
 // are acquired in the callback, or deadlock will occur.
+// No further operations may be scheduled on the aio, stop is
+// a permanent operation.
 NNG_DECL void nng_aio_stop(nng_aio *);
 
 // nng_aio_result returns the status/result of the operation. This
@@ -569,6 +560,7 @@ NNG_DECL size_t nng_aio_count(nng_aio *);
 // nng_aio_cancel attempts to cancel any in-progress I/O operation.
 // The AIO callback will still be executed, but if the cancellation is
 // successful then the status will be NNG_ECANCELED.
+// An AIO can only be canceled if it was submitted already.
 NNG_DECL void nng_aio_cancel(nng_aio *);
 
 // nng_aio_abort is like nng_aio_cancel, but allows for a different
@@ -714,7 +706,6 @@ NNG_DECL int nng_pipe_get_ms(nng_pipe, const char *, nng_duration *);
 NNG_DECL int nng_pipe_get_size(nng_pipe, const char *, size_t *);
 NNG_DECL int nng_pipe_get_uint64(nng_pipe, const char *, uint64_t *);
 NNG_DECL int nng_pipe_get_string(nng_pipe, const char *, char **);
-NNG_DECL int nng_pipe_get_ptr(nng_pipe, const char *, void **);
 NNG_DECL int nng_pipe_get_addr(nng_pipe, const char *, nng_sockaddr *);
 
 NNG_DECL int          nng_pipe_close(nng_pipe);
@@ -802,11 +793,6 @@ NNG_DECL nng_listener nng_pipe_listener(nng_pipe);
 
 // IPC options.  These will largely vary depending on the platform,
 // as POSIX systems have very different options than Windows.
-
-// Security Descriptor.  This option may only be set on listeners
-// on the Windows platform, where the object is a pointer to a
-// a Windows SECURITY_DESCRIPTOR.
-#define NNG_OPT_IPC_SECURITY_DESCRIPTOR "ipc:security-descriptor"
 
 // Permissions bits.  This option is only valid for listeners on
 // POSIX platforms and others that honor UNIX style permission bits.
@@ -1117,6 +1103,11 @@ NNG_DECL const char *nng_url_scheme(const nng_url *);
 // the scheme.
 NNG_DECL uint32_t nng_url_port(const nng_url *);
 
+// Update a URL with a zero port to a non-zero port (useful
+// after a bind to port 0).  Does nothing if the URL's port is not
+// zero to start with.
+NNG_DECL void nng_url_resolve_port(nng_url *url, uint32_t port);
+
 // hostname part of URL, can be NULL if irerelvant to scheme
 const char *nng_url_hostname(const nng_url *);
 
@@ -1154,7 +1145,6 @@ NNG_DECL int  nng_stream_get_ms(nng_stream *, const char *, nng_duration *);
 NNG_DECL int  nng_stream_get_size(nng_stream *, const char *, size_t *);
 NNG_DECL int  nng_stream_get_uint64(nng_stream *, const char *, uint64_t *);
 NNG_DECL int  nng_stream_get_string(nng_stream *, const char *, char **);
-NNG_DECL int  nng_stream_get_ptr(nng_stream *, const char *, void **);
 NNG_DECL int  nng_stream_get_addr(nng_stream *, const char *, nng_sockaddr *);
 
 NNG_DECL int nng_stream_dialer_alloc(nng_stream_dialer **, const char *);
@@ -1175,8 +1165,6 @@ NNG_DECL int nng_stream_dialer_get_uint64(
     nng_stream_dialer *, const char *, uint64_t *);
 NNG_DECL int nng_stream_dialer_get_string(
     nng_stream_dialer *, const char *, char **);
-NNG_DECL int nng_stream_dialer_get_ptr(
-    nng_stream_dialer *, const char *, void **);
 NNG_DECL int nng_stream_dialer_get_addr(
     nng_stream_dialer *, const char *, nng_sockaddr *);
 NNG_DECL int nng_stream_dialer_set_bool(
@@ -1190,8 +1178,6 @@ NNG_DECL int nng_stream_dialer_set_uint64(
     nng_stream_dialer *, const char *, uint64_t);
 NNG_DECL int nng_stream_dialer_set_string(
     nng_stream_dialer *, const char *, const char *);
-NNG_DECL int nng_stream_dialer_set_ptr(
-    nng_stream_dialer *, const char *, void *);
 NNG_DECL int nng_stream_dialer_set_addr(
     nng_stream_dialer *, const char *, const nng_sockaddr *);
 
@@ -1221,8 +1207,6 @@ NNG_DECL int nng_stream_listener_get_uint64(
     nng_stream_listener *, const char *, uint64_t *);
 NNG_DECL int nng_stream_listener_get_string(
     nng_stream_listener *, const char *, char **);
-NNG_DECL int nng_stream_listener_get_ptr(
-    nng_stream_listener *, const char *, void **);
 NNG_DECL int nng_stream_listener_get_addr(
     nng_stream_listener *, const char *, nng_sockaddr *);
 NNG_DECL int nng_stream_listener_set_bool(
@@ -1237,8 +1221,6 @@ NNG_DECL int nng_stream_listener_set_uint64(
     nng_stream_listener *, const char *, uint64_t);
 NNG_DECL int nng_stream_listener_set_string(
     nng_stream_listener *, const char *, const char *);
-NNG_DECL int nng_stream_listener_set_ptr(
-    nng_stream_listener *, const char *, void *);
 NNG_DECL int nng_stream_listener_set_addr(
     nng_stream_listener *, const char *, const nng_sockaddr *);
 
@@ -1246,6 +1228,11 @@ NNG_DECL int nng_stream_listener_get_tls(
     nng_stream_listener *, nng_tls_config **);
 NNG_DECL int nng_stream_listener_set_tls(
     nng_stream_listener *, nng_tls_config *);
+
+// Security Descriptor only valid for IPC streams on Windows
+// Parameter is a PSECURITY_DESCRIPTOR.
+NNG_DECL int nng_stream_listener_set_security_descriptor(
+    nng_stream_listener *, void *);
 
 // UDP operations.  These are provided for convenience,
 // and should be considered somewhat experimental.

@@ -9,6 +9,7 @@
 //
 
 #include "core/nng_impl.h"
+#include "core/taskq.h"
 #include <string.h>
 
 struct nni_aio_expire_q {
@@ -18,6 +19,7 @@ struct nni_aio_expire_q {
 	nni_thr  eq_thr;
 	nni_time eq_next; // next expiration
 	bool     eq_exit;
+	bool     eq_stop;
 };
 
 static nni_aio_expire_q **nni_aio_expire_q_list;
@@ -85,6 +87,7 @@ nni_aio_init(nni_aio *aio, nni_cb cb, void *arg)
 	nni_task_init(&aio->a_task, NULL, cb, arg);
 	aio->a_expire  = NNI_TIME_NEVER;
 	aio->a_timeout = NNG_DURATION_INFINITE;
+	aio->a_init    = true;
 	aio->a_expire_q =
 	    nni_aio_expire_q_list[nni_random() % nni_aio_expire_q_cnt];
 }
@@ -92,33 +95,33 @@ nni_aio_init(nni_aio *aio, nni_cb cb, void *arg)
 void
 nni_aio_fini(nni_aio *aio)
 {
-	nni_aio_cancel_fn fn;
-	void             *arg;
-	nni_aio_expire_q *eq = aio->a_expire_q;
+	if (aio != NULL && aio->a_init) {
+		nni_aio_cancel_fn fn;
+		void             *arg;
+		nni_aio_expire_q *eq = aio->a_expire_q;
 
-	// This is like aio_close, but we don't want to dispatch
-	// the task.  And unlike aio_stop, we don't want to wait
-	// for the task.  (Because we implicitly do task_fini.)
-	// We also wait if the aio is being expired.
-	nni_mtx_lock(&eq->eq_mtx);
-	aio->a_stop = true;
-	while (aio->a_expiring) {
-		nni_cv_wait(&eq->eq_cv);
+		// This is like aio_close, but we don't want to dispatch
+		// the task.  And unlike aio_stop, we don't want to wait
+		// for the task.  (Because we implicitly do task_fini.)
+		// We also wait if the aio is being expired.
+		nni_mtx_lock(&eq->eq_mtx);
+		aio->a_stop = true;
+		while (aio->a_expiring) {
+			nni_cv_wait(&eq->eq_cv);
+		}
+		nni_aio_expire_rm(aio);
+		fn                = aio->a_cancel_fn;
+		arg               = aio->a_cancel_arg;
+		aio->a_cancel_fn  = NULL;
+		aio->a_cancel_arg = NULL;
+		nni_mtx_unlock(&eq->eq_mtx);
+
+		if (fn != NULL) {
+			fn(aio, arg, NNG_ECLOSED);
+		}
+
+		nni_task_fini(&aio->a_task);
 	}
-	nni_aio_expire_rm(aio);
-	fn                = aio->a_cancel_fn;
-	arg               = aio->a_cancel_arg;
-	aio->a_cancel_fn  = NULL;
-	aio->a_cancel_arg = NULL;
-	nni_mtx_unlock(&eq->eq_mtx);
-
-	if (fn != NULL) {
-		fn(aio, arg, NNG_ECLOSED);
-	} else {
-		nni_task_abort(&aio->a_task);
-	}
-
-	nni_task_fini(&aio->a_task);
 }
 
 int
@@ -146,7 +149,7 @@ nni_aio_free(nni_aio *aio)
 void
 nni_aio_reap(nni_aio *aio)
 {
-	if (aio != NULL) {
+	if (aio != NULL && aio->a_init) {
 		nni_reap(&aio_reap_list, aio);
 	}
 }
@@ -179,24 +182,25 @@ nni_aio_set_iov(nni_aio *aio, unsigned nio, const nni_iov *iov)
 void
 nni_aio_stop(nni_aio *aio)
 {
-	if (aio != NULL) {
+	if (aio != NULL && aio->a_init) {
 		nni_aio_cancel_fn fn;
 		void             *arg;
 		nni_aio_expire_q *eq = aio->a_expire_q;
 
 		nni_mtx_lock(&eq->eq_mtx);
+		aio->a_stop = true;
+		while (aio->a_expiring) {
+			nni_cv_wait(&eq->eq_cv);
+		}
 		nni_aio_expire_rm(aio);
 		fn                = aio->a_cancel_fn;
 		arg               = aio->a_cancel_arg;
 		aio->a_cancel_fn  = NULL;
 		aio->a_cancel_arg = NULL;
-		aio->a_stop       = true;
 		nni_mtx_unlock(&eq->eq_mtx);
 
 		if (fn != NULL) {
 			fn(aio, arg, NNG_ECANCELED);
-		} else {
-			nni_task_abort(&aio->a_task);
 		}
 
 		nni_aio_wait(aio);
@@ -206,7 +210,7 @@ nni_aio_stop(nni_aio *aio)
 void
 nni_aio_close(nni_aio *aio)
 {
-	if (aio != NULL) {
+	if (aio != NULL && aio->a_init) {
 		nni_aio_cancel_fn fn;
 		void             *arg;
 		nni_aio_expire_q *eq = aio->a_expire_q;
@@ -222,8 +226,6 @@ nni_aio_close(nni_aio *aio)
 
 		if (fn != NULL) {
 			fn(aio, arg, NNG_ECLOSED);
-		} else {
-			nni_task_abort(&aio->a_task);
 		}
 	}
 }
@@ -309,7 +311,9 @@ nni_aio_count(nni_aio *aio)
 void
 nni_aio_wait(nni_aio *aio)
 {
-	nni_task_wait(&aio->a_task);
+	if (aio != NULL && aio->a_expire_q != NULL) {
+		nni_task_wait(&aio->a_task);
+	}
 }
 
 bool
@@ -328,6 +332,7 @@ nni_aio_begin(nni_aio *aio)
 	// checks may wish ignore or suppress these checks.
 	nni_aio_expire_q *eq = aio->a_expire_q;
 
+	NNI_ASSERT(aio->a_init);
 	nni_mtx_lock(&eq->eq_mtx);
 	NNI_ASSERT(!nni_aio_list_active(aio));
 	NNI_ASSERT(aio->a_cancel_fn == NULL);
@@ -341,9 +346,10 @@ nni_aio_begin(nni_aio *aio)
 	aio->a_result    = 0;
 	aio->a_count     = 0;
 	aio->a_cancel_fn = NULL;
+	aio->a_abort     = false;
 
 	// We should not reschedule anything at this point.
-	if (aio->a_stop) {
+	if (aio->a_stop || eq->eq_stop) {
 		aio->a_result    = NNG_ECANCELED;
 		aio->a_cancel_fn = NULL;
 		aio->a_expire    = NNI_TIME_NEVER;
@@ -367,7 +373,6 @@ nni_aio_schedule(nni_aio *aio, nni_aio_cancel_fn cancel, void *data)
 		// Convert the relative timeout to an absolute timeout.
 		switch (aio->a_timeout) {
 		case NNG_DURATION_ZERO:
-			nni_task_abort(&aio->a_task);
 			return (NNG_ETIMEDOUT);
 		case NNG_DURATION_INFINITE:
 		case NNG_DURATION_DEFAULT:
@@ -380,8 +385,12 @@ nni_aio_schedule(nni_aio *aio, nni_aio_cancel_fn cancel, void *data)
 	}
 
 	nni_mtx_lock(&eq->eq_mtx);
-	if (aio->a_stop) {
-		nni_task_abort(&aio->a_task);
+	if (aio->a_abort) {
+		int rv = aio->a_result;
+		nni_mtx_unlock(&eq->eq_mtx);
+		return (rv);
+	}
+	if (aio->a_stop || eq->eq_stop) {
 		nni_mtx_unlock(&eq->eq_mtx);
 		return (NNG_ECLOSED);
 	}
@@ -404,23 +413,29 @@ nni_aio_schedule(nni_aio *aio, nni_aio_cancel_fn cancel, void *data)
 void
 nni_aio_abort(nni_aio *aio, int rv)
 {
-	nni_aio_cancel_fn fn;
-	void             *arg;
-	nni_aio_expire_q *eq = aio->a_expire_q;
+	if (aio != NULL && aio->a_init) {
+		nni_aio_cancel_fn fn;
+		void             *arg;
+		nni_aio_expire_q *eq = aio->a_expire_q;
 
-	nni_mtx_lock(&eq->eq_mtx);
-	nni_aio_expire_rm(aio);
-	fn                = aio->a_cancel_fn;
-	arg               = aio->a_cancel_arg;
-	aio->a_cancel_fn  = NULL;
-	aio->a_cancel_arg = NULL;
-	nni_mtx_unlock(&eq->eq_mtx);
+		nni_mtx_lock(&eq->eq_mtx);
+		nni_aio_expire_rm(aio);
+		fn                = aio->a_cancel_fn;
+		arg               = aio->a_cancel_arg;
+		aio->a_cancel_fn  = NULL;
+		aio->a_cancel_arg = NULL;
+		if (fn == NULL) {
+			// We haven't been scheduled yet,
+			// so make sure that schedule will abort.
+			aio->a_abort  = true;
+			aio->a_result = rv;
+		}
+		nni_mtx_unlock(&eq->eq_mtx);
 
-	// Stop any I/O at the provider level.
-	if (fn != NULL) {
-		fn(aio, arg, rv);
-	} else {
-		nni_task_abort(&aio->a_task);
+		// Stop any I/O at the provider level.
+		if (fn != NULL) {
+			fn(aio, arg, rv);
+		}
 	}
 }
 
@@ -595,16 +610,15 @@ nni_aio_expire_loop(void *arg)
 			nni_mtx_unlock(mtx);
 			return;
 		}
-		if (now < next) {
-			// Early wake up (just to reschedule), no need to
-			// rescan the list.  This is an optimization.
+		if (now < next && !(q->eq_stop && aio != NULL)) {
+			// nothing to do!
 			nni_cv_until(cv, next);
 			continue;
 		}
 		q->eq_next = NNI_TIME_NEVER;
 		exp_idx    = 0;
 		while (aio != NULL) {
-			if ((aio->a_expire < now) &&
+			if ((q->eq_stop || aio->a_expire < now) &&
 			    (exp_idx < NNI_EXPIRE_BATCH)) {
 				nni_aio *nxt;
 
@@ -627,7 +641,14 @@ nni_aio_expire_loop(void *arg)
 
 		for (uint32_t i = 0; i < exp_idx; i++) {
 			aio = expires[i];
-			rv  = aio->a_expire_ok ? 0 : NNG_ETIMEDOUT;
+			if (q->eq_stop) {
+				rv = NNG_ECANCELED;
+			} else if (aio->a_expire_ok) {
+				aio->a_expire_ok = false;
+				rv               = 0;
+			} else {
+				rv = NNG_ETIMEDOUT;
+			}
 
 			nni_aio_cancel_fn cancel_fn  = aio->a_cancel_fn;
 			void             *cancel_arg = aio->a_cancel_arg;
@@ -639,7 +660,15 @@ nni_aio_expire_loop(void *arg)
 			// If there is no cancellation function, then we cannot
 			// terminate the aio - we've tried, but it has to run
 			// to its natural conclusion.
-			if (cancel_fn != NULL) {
+			//
+			// For the special case of sleeping, we don't need to
+			// drop the lock and call the cancel function, we are
+			// already doing it right here!
+			if (aio->a_sleep) {
+				aio->a_result = rv;
+				aio->a_sleep  = false;
+				nni_task_dispatch(&aio->a_task);
+			} else if (cancel_fn != NULL) {
 				nni_mtx_unlock(mtx);
 				cancel_fn(aio, cancel_arg, rv);
 				nni_mtx_lock(mtx);
@@ -647,10 +676,6 @@ nni_aio_expire_loop(void *arg)
 			aio->a_expiring = false;
 		}
 		nni_cv_wake(cv);
-
-		if (now < q->eq_next) {
-			nni_cv_until(cv, q->eq_next);
-		}
 	}
 }
 
@@ -768,12 +793,30 @@ nni_sleep_aio(nng_duration ms, nng_aio *aio)
 	}
 }
 
+static bool
+nni_aio_expire_q_stop(nni_aio_expire_q *eq)
+{
+	bool result = false;
+	if (eq != NULL) {
+		nni_mtx_lock(&eq->eq_mtx);
+		eq->eq_stop = true;
+		nni_cv_wake(&eq->eq_cv);
+		while (!nni_list_empty(&eq->eq_list)) {
+			result = true;
+			nni_cv_wait(&eq->eq_cv);
+		}
+		nni_mtx_unlock(&eq->eq_mtx);
+	}
+	return (result);
+}
+
 static void
 nni_aio_expire_q_free(nni_aio_expire_q *eq)
 {
 	if (eq == NULL) {
 		return;
 	}
+	NNI_ASSERT(eq->eq_stop);
 	if (!eq->eq_exit) {
 		nni_mtx_lock(&eq->eq_mtx);
 		eq->eq_exit = true;
@@ -808,6 +851,18 @@ nni_aio_expire_q_alloc(void)
 
 	nni_thr_run(&eq->eq_thr);
 	return (eq);
+}
+
+bool
+nni_aio_sys_drain(void)
+{
+	bool result = false;
+	for (int i = 0; i < nni_aio_expire_q_cnt; i++) {
+		if (nni_aio_expire_q_stop(nni_aio_expire_q_list[i])) {
+			result = true;
+		}
+	}
+	return (result);
 }
 
 void

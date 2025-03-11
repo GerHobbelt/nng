@@ -641,8 +641,6 @@ tlstran_ep_fini(void *arg)
 		return;
 	}
 	nni_mtx_unlock(&ep->mtx);
-	nni_aio_stop(ep->timeaio);
-	nni_aio_stop(ep->connaio);
 	nng_stream_dialer_free(ep->dialer);
 	nng_stream_listener_free(ep->listener);
 	nni_aio_free(ep->timeaio);
@@ -650,6 +648,15 @@ tlstran_ep_fini(void *arg)
 
 	nni_mtx_fini(&ep->mtx);
 	NNI_FREE_STRUCT(ep);
+}
+
+static void
+tlstran_ep_stop(void *arg)
+{
+	tlstran_ep *ep = arg;
+
+	nni_aio_stop(ep->timeaio);
+	nni_aio_stop(ep->connaio);
 }
 
 static void
@@ -863,22 +870,7 @@ tlstran_ep_init_listener(void **lp, nng_url *url, nni_listener *nlistener)
 {
 	tlstran_ep *ep;
 	int         rv;
-	uint16_t    af;
-	char       *host = url->u_hostname;
-	nni_aio    *aio;
 	nni_sock   *sock = nni_listener_sock(nlistener);
-
-	if (strcmp(url->u_scheme, "tls+tcp") == 0) {
-		af = NNG_AF_UNSPEC;
-	} else if (strcmp(url->u_scheme, "tls+tcp4") == 0) {
-		af = NNG_AF_INET;
-#ifdef NNG_ENABLE_IPV6
-	} else if (strcmp(url->u_scheme, "tls+tcp6") == 0) {
-		af = NNG_AF_INET6;
-#endif
-	} else {
-		return (NNG_EADDRINVAL);
-	}
 
 	// Check for invalid URL components.
 	if ((strlen(url->u_path) != 0) && (strcmp(url->u_path, "/") != 0)) {
@@ -890,30 +882,7 @@ tlstran_ep_init_listener(void **lp, nng_url *url, nni_listener *nlistener)
 	}
 	if (((rv = tlstran_ep_init(&ep, url, sock)) != 0) ||
 	    ((rv = nni_aio_alloc(&ep->connaio, tlstran_accept_cb, ep)) != 0) ||
-	    ((rv = nni_aio_alloc(&ep->timeaio, tlstran_timer_cb, ep)) != 0)) {
-		return (rv);
-	}
-
-	if (strlen(host) == 0) {
-		host = NULL;
-	}
-
-	// XXX: We are doing lookup at listener initialization.  There is
-	// a valid argument that this should be done at bind time, but that
-	// would require making bind asynchronous.  In some ways this would
-	// be worse than the cost of just waiting here.  We always recommend
-	// using local IP addresses rather than names when possible.
-
-	if ((rv = nni_aio_alloc(&aio, NULL, NULL)) != 0) {
-		tlstran_ep_fini(ep);
-		return (rv);
-	}
-	nni_resolv_ip(host, url->u_port, af, true, &ep->sa, aio);
-	nni_aio_wait(aio);
-	rv = nni_aio_result(aio);
-	nni_aio_free(aio);
-
-	if ((rv != 0) ||
+	    ((rv = nni_aio_alloc(&ep->timeaio, tlstran_timer_cb, ep)) != 0) ||
 	    ((rv = nng_stream_listener_alloc_url(&ep->listener, url)) != 0)) {
 		tlstran_ep_fini(ep);
 		return (rv);
@@ -1185,6 +1154,7 @@ static nni_sp_dialer_ops tlstran_dialer_ops = {
 	.d_fini    = tlstran_ep_fini,
 	.d_connect = tlstran_ep_connect,
 	.d_close   = tlstran_ep_close,
+	.d_stop    = tlstran_ep_stop,
 	.d_getopt  = tlstran_dialer_getopt,
 	.d_setopt  = tlstran_dialer_setopt,
 	.d_get_tls = tlstran_dialer_get_tls,
@@ -1197,6 +1167,7 @@ static nni_sp_listener_ops tlstran_listener_ops = {
 	.l_bind    = tlstran_ep_bind,
 	.l_accept  = tlstran_ep_accept,
 	.l_close   = tlstran_ep_close,
+	.l_stop    = tlstran_ep_stop,
 	.l_getopt  = tlstran_listener_get,
 	.l_setopt  = tlstran_listener_set,
 	.l_set_tls = tlstran_listener_set_tls,

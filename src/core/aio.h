@@ -193,6 +193,7 @@ extern void nni_aio_completions_add(
     nni_aio_completions *, nni_aio *, int, size_t);
 
 extern int  nni_aio_sys_init(nng_init_params *);
+extern bool nni_aio_sys_drain(void);
 extern void nni_aio_sys_fini(void);
 
 typedef struct nni_aio_expire_q nni_aio_expire_q;
@@ -213,6 +214,8 @@ struct nng_aio {
 	bool         a_expire_ok;  // Expire from sleep is ok
 	bool         a_expiring;   // Expiration in progress
 	bool         a_use_expire; // Use expire instead of timeout
+	bool         a_abort;      // Task was aborted
+	bool         a_init;       // Initialized this
 	nni_task     a_task;
 
 	// Read/write operations.

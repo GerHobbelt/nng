@@ -59,6 +59,7 @@ nni_taskq_thread(void *self)
 			continue;
 		}
 
+		nni_cv_wake(&tq->tq_wait_cv);
 		if (!tq->tq_run) {
 			break;
 		}
@@ -127,6 +128,19 @@ nni_taskq_fini(nni_taskq *tq)
 	NNI_FREE_STRUCT(tq);
 }
 
+bool
+nni_taskq_drain(nni_taskq *tq)
+{
+	bool result = false;
+	nni_mtx_lock(&tq->tq_mtx);
+	while (!nni_list_empty(&tq->tq_tasks)) {
+		result = true;
+		nni_cv_wait(&tq->tq_wait_cv);
+	}
+	nni_mtx_unlock(&tq->tq_mtx);
+	return (result);
+}
+
 void
 nni_task_exec(nni_task *task)
 {
@@ -184,20 +198,6 @@ nni_task_prep(nni_task *task)
 	nni_mtx_unlock(&task->task_mtx);
 }
 
-void
-nni_task_abort(nni_task *task)
-{
-	// This is called when unscheduling the task.
-	nni_mtx_lock(&task->task_mtx);
-	if (task->task_prep) {
-		task->task_prep = false;
-		task->task_busy--;
-		if (task->task_busy == 0) {
-			nni_cv_wake(&task->task_cv);
-		}
-	}
-	nni_mtx_unlock(&task->task_mtx);
-}
 void
 nni_task_wait(nni_task *task)
 {
@@ -261,6 +261,12 @@ nni_taskq_sys_init(nng_init_params *params)
 	params->num_task_threads = num_thr;
 
 	return (nni_taskq_init(&nni_taskq_systq, (int) num_thr));
+}
+
+bool
+nni_taskq_sys_drain(void)
+{
+	return (nni_taskq_drain(nni_taskq_systq));
 }
 
 void

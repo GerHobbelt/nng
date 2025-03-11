@@ -20,11 +20,11 @@ typedef struct {
 	char               *path;
 	bool                started;
 	bool                closed;
+	bool                accepting;
 	HANDLE              f;
 	SECURITY_ATTRIBUTES sec_attr;
 	nni_list            aios;
 	nni_mtx             mtx;
-	nni_cv              cv;
 	nni_win_io          io;
 	nni_sockaddr        sa;
 	int                 rv;
@@ -39,7 +39,6 @@ ipc_accept_done(ipc_listener *l, int rv)
 
 	aio = nni_list_first(&l->aios);
 	nni_list_remove(&l->aios, aio);
-	nni_cv_wake(&l->cv);
 
 	if (l->closed) {
 		rv = NNG_ECLOSED;
@@ -86,6 +85,7 @@ ipc_accept_start(ipc_listener *l)
 {
 	nni_aio *aio;
 
+	NNI_ASSERT(!l->accepting);
 	while ((aio = nni_list_first(&l->aios)) != NULL) {
 		int rv;
 
@@ -97,6 +97,7 @@ ipc_accept_start(ipc_listener *l)
 			rv = 0;
 		} else if ((rv = GetLastError()) == ERROR_IO_PENDING) {
 			// asynchronous completion pending
+			l->accepting = true;
 			return;
 		} else if (rv == ERROR_PIPE_CONNECTED) {
 			rv = 0;
@@ -104,8 +105,6 @@ ipc_accept_start(ipc_listener *l)
 		// synchronous completion
 		ipc_accept_done(l, rv);
 	}
-
-	nni_cv_wake(&l->cv);
 }
 
 static void
@@ -116,9 +115,18 @@ ipc_accept_cb(nni_win_io *io, int rv, size_t cnt)
 	NNI_ARG_UNUSED(cnt);
 
 	nni_mtx_lock(&l->mtx);
-	if (nni_list_empty(&l->aios)) {
-		// We canceled this somehow.  We no longer care.
-		DisconnectNamedPipe(l->f);
+	l->accepting = false;
+	if (l->closed) {
+		// We're shutting down, and the handle is probably closed.
+		// We should not have gotten anything here.
+		nni_mtx_unlock(&l->mtx);
+		return;
+	}
+	if (nni_list_empty(&l->aios) && l->rv == 0) {
+		// We canceled, and nobody waiting.
+		// But... we'll probably have another caller do
+		// accept momentarily, so we leave this and it will be
+		// ERROR_PIPE_CONNECTED later.
 		nni_mtx_unlock(&l->mtx);
 		return;
 	}
@@ -132,15 +140,11 @@ ipc_accept_cb(nni_win_io *io, int rv, size_t cnt)
 }
 
 static int
-ipc_listener_set_sec_desc(void *arg, const void *buf, size_t sz, nni_type t)
+ipc_listener_set_sec_desc(void *arg, void *desc)
 {
 	ipc_listener *l = arg;
-	void         *desc;
 	int           rv;
 
-	if ((rv = nni_copyin_ptr(&desc, buf, sz, t)) != 0) {
-		return (rv);
-	}
 	if (!IsValidSecurityDescriptor((SECURITY_DESCRIPTOR *) desc)) {
 		return (NNG_EINVAL);
 	}
@@ -162,10 +166,6 @@ ipc_listener_get_addr(void *arg, void *buf, size_t *szp, nni_type t)
 }
 
 static const nni_option ipc_listener_options[] = {
-	{
-	    .o_name = NNG_OPT_IPC_SECURITY_DESCRIPTOR,
-	    .o_set  = ipc_listener_set_sec_desc,
-	},
 	{
 	    .o_name = NNG_OPT_LOCADDR,
 	    .o_get  = ipc_listener_get_addr,
@@ -250,12 +250,8 @@ ipc_accept_cancel(nni_aio *aio, void *arg, int rv)
 	ipc_listener *l = arg;
 
 	nni_mtx_unlock(&l->mtx);
-	if (aio == nni_list_first(&l->aios)) {
-		l->rv = rv;
-		CancelIoEx(l->f, &l->io.olpd);
-	} else if (nni_aio_list_active(aio)) {
-		nni_list_remove(&l->aios, aio);
-		nni_cv_wake(&l->cv);
+	if (nni_aio_list_active(aio)) {
+		nni_aio_list_remove(aio);
 		nni_aio_finish_error(aio, rv);
 	}
 	nni_mtx_unlock(&l->mtx);
@@ -265,6 +261,7 @@ static void
 ipc_listener_accept(void *arg, nni_aio *aio)
 {
 	ipc_listener *l = arg;
+	int           rv;
 	if (nni_aio_begin(aio) != 0) {
 		return;
 	}
@@ -274,10 +271,13 @@ ipc_listener_accept(void *arg, nni_aio *aio)
 		nni_aio_finish_error(aio, NNG_ESTATE);
 		return;
 	}
-	nni_aio_schedule(aio, ipc_accept_cancel, l);
-	nni_list_append(&l->aios, aio);
-	if (nni_list_first(&l->aios) == aio) {
-		ipc_accept_start(l);
+	if ((rv = nni_aio_schedule(aio, ipc_accept_cancel, l)) != 0) {
+		nni_aio_finish_error(aio, rv);
+	} else {
+		nni_list_append(&l->aios, aio);
+		if (nni_list_first(&l->aios) == aio) {
+			ipc_accept_start(l);
+		}
 	}
 	nni_mtx_unlock(&l->mtx);
 }
@@ -286,29 +286,55 @@ static void
 ipc_listener_close(void *arg)
 {
 	ipc_listener *l = arg;
+	nni_aio      *aio;
+	int           rv;
+	DWORD         nb;
+
 	nni_mtx_lock(&l->mtx);
-	if (!l->closed) {
-		l->closed = true;
-		if (!nni_list_empty(&l->aios)) {
-			CancelIoEx(l->f, &l->io.olpd);
-		}
-		DisconnectNamedPipe(l->f);
-		CloseHandle(l->f);
+	if (l->closed) {
+		nni_mtx_unlock(&l->mtx);
+		return;
 	}
+	l->closed = true;
+	while ((aio = nni_list_first(&l->aios)) != NULL) {
+		nni_aio_list_remove(aio);
+		nni_aio_finish_error(aio, NNG_ECLOSED);
+	}
+	bool accepting = l->accepting;
 	nni_mtx_unlock(&l->mtx);
+
+	// This craziness because CancelIoEx on ConnectNamedPipe
+	// seems to be incredibly unreliable. It does work, sometimes,
+	// but often it doesn't.  This entire named pipe business needs
+	// to be retired in favor of UNIX domain sockets anyway.
+
+	while (accepting) {
+		if (!CancelIoEx(l->f, &l->io.olpd)) {
+			// operation not found probably
+			// We just inject a safety sleep to
+			// let it drain and give the callback
+			// a chance to fire (although it should
+			// already have done so.)
+			DisconnectNamedPipe(l->f);
+			CloseHandle(l->f);
+			nng_msleep(500);
+			return;
+		}
+		nng_msleep(100);
+		nni_mtx_lock(&l->mtx);
+		accepting = l->accepting;
+		nni_mtx_unlock(&l->mtx);
+	}
+	DisconnectNamedPipe(l->f);
+	CloseHandle(l->f);
 }
 
 static void
 ipc_listener_free(void *arg)
 {
 	ipc_listener *l = arg;
-	nni_mtx_lock(&l->mtx);
-	while (!nni_list_empty(&l->aios)) {
-		nni_cv_wait(&l->cv);
-	}
-	nni_mtx_unlock(&l->mtx);
+
 	nni_strfree(l->path);
-	nni_cv_fini(&l->cv);
 	nni_mtx_fini(&l->mtx);
 	NNI_FREE_STRUCT(l);
 }
@@ -339,10 +365,10 @@ nni_ipc_listener_alloc(nng_stream_listener **lp, const nng_url *url)
 	l->sl.sl_accept                  = ipc_listener_accept;
 	l->sl.sl_get                     = ipc_listener_get;
 	l->sl.sl_set                     = ipc_listener_set;
+	l->sl.sl_set_security_descriptor = ipc_listener_set_sec_desc;
 	snprintf(l->sa.s_ipc.sa_path, NNG_MAXADDRLEN, "%s", url->u_path);
 	nni_aio_list_init(&l->aios);
 	nni_mtx_init(&l->mtx);
-	nni_cv_init(&l->cv, &l->mtx);
 	*lp = (void *) l;
 	return (0);
 }

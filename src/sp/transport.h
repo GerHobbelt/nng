@@ -12,6 +12,7 @@
 #ifndef PROTOCOL_SP_TRANSPORT_H
 #define PROTOCOL_SP_TRANSPORT_H
 
+#include "core/defs.h"
 #include "core/options.h"
 
 // Endpoint operations are called by the socket in a
@@ -25,6 +26,10 @@
 // against any asynchronous operations they manage themselves, though.)
 
 struct nni_sp_dialer_ops {
+	// d_size is the size of transport specific data allocated
+	// to the listener.
+	size_t d_size;
+
 	// d_init creates a vanilla dialer. The value created is
 	// used for the first argument for all other dialer functions.
 	int (*d_init)(void **, nng_url *, nni_dialer *);
@@ -38,10 +43,13 @@ struct nni_sp_dialer_ops {
 	// NNG_ECONNFAILED, NNG_ETIMEDOUT, and NNG_EPROTO.
 	void (*d_connect)(void *, nni_aio *);
 
-	// d_close stops the dialer from operating altogether.  It
-	// does not affect pipes that have already been created.  It is
-	// nonblocking.
+	// d_close stops the dialer from operating altogether.
+	// It is nonblocking.
 	void (*d_close)(void *);
+
+	// d_stop is close, but also waits for the operation to be
+	// be fully stopped.
+	void (*d_stop)(void *);
 
 	// d_getopt is used to obtain an option.
 	int (*d_getopt)(void *, const char *, void *, size_t *, nni_type);
@@ -64,6 +72,10 @@ struct nni_sp_dialer_ops {
 };
 
 struct nni_sp_listener_ops {
+	// l_size is the size of transport specific data allocated
+	// to the listener.
+	size_t l_size;
+
 	// l_init creates a vanilla listener. The value created is
 	// used for the first argument for all other listener functions.
 	int (*l_init)(void **, nng_url *, nni_listener *);
@@ -84,10 +96,13 @@ struct nni_sp_listener_ops {
 	// l_accept accepts an inbound connection.
 	void (*l_accept)(void *, nni_aio *);
 
-	// l_close stops the listener from operating altogether.  It
-	// does not affect pipes that have already been created.  It is
-	// nonblocking.
+	// l_close stops the listener from operating altogether.
+	// It is nonblocking.
 	void (*l_close)(void *);
+
+	// l_stop is close, but also waits for the operation to be
+	// be fully stopped.
+	void (*l_stop)(void *);
 
 	// l_getopt is used to obtain an option.
 	int (*l_getopt)(void *, const char *, void *, size_t *, nni_type);
@@ -102,6 +117,9 @@ struct nni_sp_listener_ops {
 	// l_set_tls is used to set the TLS configruation to use for listening.
 	// This may be NULL if this listener does not support TLS.
 	int (*l_set_tls)(void *, nng_tls_config *);
+
+	// l_set_security_descriptor is used exclusively on Windows.
+	int (*l_set_security_descriptor)(void *, void *);
 
 	// l_options is an array of listener options.  The final
 	// element must have a NULL name. If this member is NULL, then
@@ -118,20 +136,27 @@ struct nni_sp_pipe_ops {
 	// p_init initializes the pipe data structures.  The main
 	// purpose of this is so that the pipe will see the upper
 	// layer nni_pipe and get a chance to register stats and such.
+	size_t p_size;
+
+	// p_init initializes the transport's pipe data structure.
+	// The pipe MUST be left in a state that p_fini can be safely
+	// called on it, even if it does not succeed.  (The upper layers
+	// will call p_fini as part of the cleanup of a failure.)
+	// This function should not acquire any locks.
 	int (*p_init)(void *, nni_pipe *);
 
 	// p_fini destroys the pipe.  This should clean up all local
 	// resources, including closing files and freeing memory, used
 	// by the pipe.  After this call returns, the system will not
-	// make further calls on the same pipe.
+	// make further calls on the same pipe.  This call should not block.
 	void (*p_fini)(void *);
 
 	// p_stop stops the pipe, waiting for any callbacks that are
 	// outstanding to complete.  This is done before tearing down
-	// resources with p_fini.
+	// resources with p_fini.  Unlike p_fini, p_stop may block.
 	void (*p_stop)(void *);
 
-	// p_aio_send queues the message for transmit.  If this fails,
+	// p_send queues the message for transmit.  If this fails,
 	// then the caller may try again with the same message (or free
 	// it).  If the call succeeds, then the transport has taken
 	// ownership of the message, and the caller may not use it

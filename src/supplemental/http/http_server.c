@@ -31,7 +31,7 @@ struct nng_http_handler {
 	bool            host_ip;
 	bool            tree;
 	bool            tree_exclusive;
-	nni_atomic_u64  ref;
+	nni_atomic_int  ref;
 	nni_atomic_bool busy;
 	size_t          maxbody;
 	bool            getbody;
@@ -49,13 +49,13 @@ typedef struct http_sconn {
 	nni_http_handler *handler; // set if we deferred to read body
 	nni_http_handler *release; // set if we dispatched handler
 	bool              close;
-	bool              closed;
 	bool              finished;
 	nni_aio          *cbaio;
 	nni_aio          *rxaio;
 	nni_aio          *txaio;
 	nni_aio          *txdataio;
 	nni_reap_node     reap;
+	nni_atomic_flag   closed;
 } http_sconn;
 
 typedef struct http_error {
@@ -107,8 +107,8 @@ nni_http_handler_init(
 	if ((h = NNI_ALLOC_STRUCT(h)) == NULL) {
 		return (NNG_ENOMEM);
 	}
-	nni_atomic_init64(&h->ref);
-	nni_atomic_inc64(&h->ref);
+	nni_atomic_init(&h->ref);
+	nni_atomic_inc(&h->ref);
 
 	// Default for HTTP is /.  But remap it to "" for ease of matching.
 	if ((uri == NULL) || (strlen(uri) == 0) || (strcmp(uri, "/") == 0)) {
@@ -137,7 +137,7 @@ nni_http_handler_init(
 void
 nni_http_handler_fini(nni_http_handler *h)
 {
-	if (nni_atomic_dec64_nv(&h->ref) != 0) {
+	if (nni_atomic_dec_nv(&h->ref) != 0) {
 		return;
 	}
 	if (h->dtor != NULL) {
@@ -310,16 +310,15 @@ http_sc_reap(void *arg)
 }
 
 static void
-http_sc_close_locked(http_sconn *sc)
+http_sconn_close(http_sconn *sc)
 {
 	nni_http_conn *conn;
 
-	if (sc->closed) {
+	if (nni_atomic_flag_test_and_set(&sc->closed)) {
 		return;
 	}
 	NNI_ASSERT(!sc->finished);
 
-	sc->closed = true;
 	nni_aio_close(sc->rxaio);
 	nni_aio_close(sc->txaio);
 	nni_aio_close(sc->txdataio);
@@ -329,17 +328,6 @@ http_sc_close_locked(http_sconn *sc)
 		nni_http_conn_close(conn);
 	}
 	nni_reap(&http_sc_reap_list, sc);
-}
-
-static void
-http_sconn_close(http_sconn *sc)
-{
-	nni_http_server *s;
-	s = sc->server;
-
-	nni_mtx_lock(&s->mtx);
-	http_sc_close_locked(sc);
-	nni_mtx_unlock(&s->mtx);
 }
 
 static void
@@ -747,7 +735,7 @@ finish:
 
 	// Set a reference -- this because the callback may be running
 	// asynchronously even after it gets removed from the server.
-	nni_atomic_inc64(&h->ref);
+	nni_atomic_inc(&h->ref);
 
 	// Documented that we call this on behalf of the callback.
 	if (nni_aio_begin(sc->cbaio) != 0) {
@@ -987,13 +975,16 @@ nni_http_server_init(nni_http_server **serverp, const nng_url *url)
 
 	nni_mtx_lock(&http_servers_lk);
 	NNI_LIST_FOREACH (&http_servers, s) {
+		nni_mtx_lock(&s->mtx);
 		if ((!s->closed) && (url->u_port == s->port) &&
 		    (strcmp(url->u_hostname, s->hostname) == 0)) {
 			*serverp = s;
 			s->refcnt++;
+			nni_mtx_unlock(&s->mtx);
 			nni_mtx_unlock(&http_servers_lk);
 			return (0);
 		}
+		nni_mtx_unlock(&s->mtx);
 	}
 
 	// We didn't find a server, try to make a new one.
@@ -1065,7 +1056,7 @@ http_server_stop(nni_http_server *s)
 	// Stopping the server is a hard stop -- it aborts any work
 	// being done by clients.  (No graceful shutdown).
 	NNI_LIST_FOREACH (&s->conns, sc) {
-		http_sc_close_locked(sc);
+		http_sconn_close(sc);
 	}
 }
 
@@ -1580,7 +1571,8 @@ http_handle_dir(nni_aio *aio)
 
 	rv = 0;
 	if (nni_file_is_dir(pn)) {
-		sprintf(dst, "%s%s", NNG_PLATFORM_DIR_SEP, "index.html");
+		snprintf(dst, pnsz - strlen(pn), "%s%s", NNG_PLATFORM_DIR_SEP,
+		    "index.html");
 		if (!nni_file_is_file(pn)) {
 			pn[strlen(pn) - 1] = '\0'; // index.html -> index.htm
 			if (!nni_file_is_file(pn)) {

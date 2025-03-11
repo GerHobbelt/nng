@@ -1,5 +1,5 @@
 //
-// Copyright 2023 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 // Copyright 2018 Devolutions <info@devolutions.net>
 //
@@ -112,6 +112,12 @@ inproc_pipe_init(void *arg, nni_pipe *p)
 	NNI_ARG_UNUSED(arg);
 	NNI_ARG_UNUSED(p);
 	return (0);
+}
+
+static void
+inproc_pipe_stop(void *arg)
+{
+	NNI_ARG_UNUSED(arg);
 }
 
 static void
@@ -326,6 +332,12 @@ inproc_listener_init(void **epp, nng_url *url, nni_listener *nlistener)
 
 	*epp = ep;
 	return (0);
+}
+
+static void
+inproc_ep_stop(void *arg)
+{
+	NNI_ARG_UNUSED(arg);
 }
 
 static void
@@ -620,6 +632,7 @@ static nni_sp_pipe_ops inproc_pipe_ops = {
 	.p_send   = inproc_pipe_send,
 	.p_recv   = inproc_pipe_recv,
 	.p_close  = inproc_pipe_close,
+	.p_stop   = inproc_pipe_stop,
 	.p_peer   = inproc_pipe_peer,
 	.p_getopt = inproc_pipe_getopt,
 };
@@ -662,6 +675,7 @@ static nni_sp_dialer_ops inproc_dialer_ops = {
 	.d_fini    = inproc_ep_fini,
 	.d_connect = inproc_ep_connect,
 	.d_close   = inproc_ep_close,
+	.d_stop    = inproc_ep_stop,
 	.d_getopt  = inproc_ep_getopt,
 	.d_setopt  = inproc_ep_setopt,
 };
@@ -672,6 +686,7 @@ static nni_sp_listener_ops inproc_listener_ops = {
 	.l_bind   = inproc_ep_bind,
 	.l_accept = inproc_ep_accept,
 	.l_close  = inproc_ep_close,
+	.l_stop   = inproc_ep_stop,
 	.l_getopt = inproc_ep_getopt,
 	.l_setopt = inproc_ep_setopt,
 };

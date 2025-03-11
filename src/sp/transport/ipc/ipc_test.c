@@ -152,7 +152,6 @@ test_ipc_ping_pong(void)
 	nng_socket s1;
 	char      *addr;
 
-	NUTS_ENABLE_LOG(NNG_LOG_INFO);
 	NUTS_ADDR(addr, "ipc");
 	NUTS_OPEN(s0);
 	NUTS_OPEN(s1);
@@ -245,7 +244,6 @@ test_ipc_recv_max(void)
 	size_t       sz;
 	char        *addr;
 
-	NUTS_ENABLE_LOG(NNG_LOG_INFO);
 	NUTS_ADDR(addr, "ipc");
 	NUTS_OPEN(s0);
 	NUTS_PASS(nng_socket_set_ms(s0, NNG_OPT_RECVTIMEO, 100));
@@ -275,7 +273,6 @@ test_ipc_connect_refused(void)
 	nng_dialer d;
 	char      *addr;
 
-	NUTS_ENABLE_LOG(NNG_LOG_INFO);
 	NUTS_ADDR(addr, "ipc");
 	NUTS_OPEN(s0);
 	NUTS_PASS(nng_socket_set_ms(s0, NNG_OPT_RECVTIMEO, 100));
@@ -292,7 +289,6 @@ test_ipc_connect_blocking(void)
 	nng_stream_listener *l;
 	char                *addr;
 
-	NUTS_ENABLE_LOG(NNG_LOG_INFO);
 	NUTS_ADDR(addr, "ipc");
 	NUTS_OPEN(s0);
 
@@ -315,7 +311,6 @@ test_ipc_connect_blocking_accept(void)
 	char                *addr;
 	nng_aio             *aio;
 
-	NUTS_ENABLE_LOG(NNG_LOG_INFO);
 	NUTS_ADDR(addr, "ipc");
 	NUTS_OPEN(s0);
 
@@ -344,7 +339,6 @@ test_ipc_listen_accept_cancel(void)
 	char                *addr;
 	nng_aio             *aio;
 
-	NUTS_ENABLE_LOG(NNG_LOG_INFO);
 	NUTS_ADDR(addr, "ipc");
 	NUTS_PASS(nng_aio_alloc(&aio, NULL, NULL));
 
@@ -364,7 +358,6 @@ test_ipc_listen_duplicate(void)
 	nng_socket s0;
 	char      *addr;
 
-	NUTS_ENABLE_LOG(NNG_LOG_INFO);
 	NUTS_ADDR(addr, "ipc");
 	NUTS_OPEN(s0);
 
@@ -384,7 +377,6 @@ test_ipc_listener_clean_stale(void)
 	char                *path;
 	char                 renamed[256];
 
-	NUTS_ENABLE_LOG(NNG_LOG_INFO);
 	NUTS_ADDR(addr, "ipc");
 	NUTS_OPEN(s0);
 
@@ -674,6 +666,26 @@ test_ipc_pipe_peer(void)
 #endif // NNG_PLATFORM_POSIX
 }
 
+void
+test_ipc_security_descriptor(void)
+{
+	nng_socket   s;
+	nng_listener l;
+	char        *addr;
+
+	NUTS_ADDR(addr, "ipc");
+	NUTS_OPEN(s);
+	NUTS_PASS(nng_listener_create(&l, s, addr));
+#ifdef NNG_PLATFORM_WINDOWS
+	// not a security descriptor
+	NUTS_FAIL(nng_listener_set_security_descriptor(l, addr), NNG_EINVAL);
+#else
+	// not appropriate
+	NUTS_FAIL(nng_listener_set_security_descriptor(l, addr), NNG_ENOTSUP);
+#endif
+	NUTS_CLOSE(s);
+}
+
 TEST_LIST = {
 	{ "ipc path too long", test_path_too_long },
 	{ "ipc dialer perms", test_ipc_dialer_perms },
@@ -696,5 +708,6 @@ TEST_LIST = {
 	{ "ipc abstract embedded null", test_abstract_null },
 	{ "ipc unix alias", test_unix_alias },
 	{ "ipc peer id", test_ipc_pipe_peer },
+	{ "ipc security descriptor", test_ipc_security_descriptor },
 	{ NULL, NULL },
 };

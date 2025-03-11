@@ -280,6 +280,16 @@ nni_stream_listener_set_tls(nng_stream_listener *l, nng_tls_config *cfg)
 }
 
 int
+nng_stream_listener_set_security_descriptor(
+    nng_stream_listener *l, void *pdesc)
+{
+	if (l->sl_set_security_descriptor == NULL) {
+		return (NNG_ENOTSUP);
+	}
+	return (l->sl_set_security_descriptor(l, pdesc));
+}
+
+int
 nng_stream_listener_alloc_url(nng_stream_listener **lp, const nng_url *url)
 {
 	for (int i = 0; stream_drivers[i].scheme != NULL; i++) {
@@ -337,12 +347,6 @@ nng_stream_get_string(nng_stream *s, const char *n, char **v)
 }
 
 int
-nng_stream_get_ptr(nng_stream *s, const char *n, void **v)
-{
-	return (nni_stream_get(s, n, v, NULL, NNI_TYPE_POINTER));
-}
-
-int
 nng_stream_get_ms(nng_stream *s, const char *n, nng_duration *v)
 {
 	return (nni_stream_get(s, n, v, NULL, NNI_TYPE_DURATION));
@@ -382,12 +386,6 @@ int
 nng_stream_dialer_get_string(nng_stream_dialer *d, const char *n, char **v)
 {
 	return (nni_stream_dialer_get(d, n, v, NULL, NNI_TYPE_STRING));
-}
-
-int
-nng_stream_dialer_get_ptr(nng_stream_dialer *d, const char *n, void **v)
-{
-	return (nni_stream_dialer_get(d, n, v, NULL, NNI_TYPE_POINTER));
 }
 
 int
@@ -441,12 +439,6 @@ nng_stream_listener_get_string(nng_stream_listener *l, const char *n, char **v)
 }
 
 int
-nng_stream_listener_get_ptr(nng_stream_listener *l, const char *n, void **v)
-{
-	return (nni_stream_listener_get(l, n, v, NULL, NNI_TYPE_POINTER));
-}
-
-int
 nng_stream_listener_get_ms(
     nng_stream_listener *l, const char *n, nng_duration *v)
 {
@@ -494,12 +486,6 @@ int
 nng_stream_dialer_set_ms(nng_stream_dialer *d, const char *n, nng_duration v)
 {
 	return (nni_stream_dialer_set(d, n, &v, sizeof(v), NNI_TYPE_DURATION));
-}
-
-int
-nng_stream_dialer_set_ptr(nng_stream_dialer *d, const char *n, void *v)
-{
-	return (nni_stream_dialer_set(d, n, &v, sizeof(v), NNI_TYPE_POINTER));
 }
 
 int
@@ -554,13 +540,6 @@ nng_stream_listener_set_ms(
 {
 	return (
 	    nni_stream_listener_set(l, n, &v, sizeof(v), NNI_TYPE_DURATION));
-}
-
-int
-nng_stream_listener_set_ptr(nng_stream_listener *l, const char *n, void *v)
-{
-	return (
-	    nni_stream_listener_set(l, n, &v, sizeof(v), NNI_TYPE_POINTER));
 }
 
 int
