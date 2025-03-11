@@ -1,5 +1,5 @@
 //
-// Copyright 2021 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 //
 // This software is supplied under the terms of the MIT License, a
@@ -32,7 +32,9 @@
 #define NNG_PLATFORM_POSIX_SOCKADDR
 #define NNG_PLATFORM_POSIX_UDP
 
-#include "platform/posix/posix_config.h"
+#include "core/defs.h"
+
+#include "posix_config.h"
 #endif
 
 #ifdef NNG_PLATFORM_POSIX_SOCKADDR
@@ -63,29 +65,12 @@ struct nni_plat_mtx {
 		PTHREAD_MUTEX_INITIALIZER \
 	}
 
-struct nni_rwlock {
-	pthread_rwlock_t rwl;
-};
-
-#define NNI_RWLOCK_INITIALIZER             \
-	{                                  \
-		PTHREAD_RWLOCK_INITIALIZER \
-	}
-
 // No static form of CV initialization because of the need to use
 // attributes to set the clock type.
 struct nni_plat_cv {
-	pthread_cond_t cv;
-	nni_plat_mtx  *mtx;
+	pthread_cond_t   cv;
+	pthread_mutex_t *mtx;
 };
-
-// NOTE: condition variables initialized with this should *NOT*
-// be used with nni_cv_until -- the clock attributes are not passed
-// and the wake-up times will not be correct.
-#define NNI_CV_INITIALIZER(mxp)                            \
-	{                                                  \
-		.mtx = mxp, .cv = PTHREAD_COND_INITIALIZER \
-	}
 
 struct nni_plat_thr {
 	pthread_t tid;

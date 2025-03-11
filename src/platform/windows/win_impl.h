@@ -44,25 +44,10 @@ struct nni_plat_mtx {
 		SRWLOCK_INIT \
 	}
 
-struct nni_rwlock {
-	SRWLOCK rwl;
-	BOOLEAN exclusive;
-};
-
-#define NNI_RWLOCK_INITIALIZER \
-	{                      \
-		SRWLOCK_INIT   \
-	}
-
 struct nni_plat_cv {
 	CONDITION_VARIABLE cv;
 	PSRWLOCK           srl;
 };
-
-#define NNI_CV_INITIALIZER(mxp)                                    \
-	{                                                          \
-		.srl = (void *) mxp, .cv = CONDITION_VARIABLE_INIT \
-	}
 
 struct nni_atomic_flag {
 	LONG f;

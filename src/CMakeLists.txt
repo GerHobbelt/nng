@@ -1,5 +1,5 @@
 #
-# Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+# Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 # Copyright 2018 Capitar IT Group BV <info@capitar.com>
 #
 # This software is supplied under the terms of the MIT License, a
@@ -9,7 +9,9 @@
 #
 
 nng_sources(nng.c nng_legacy.c)
+nng_headers(nng/args.h)
 nng_headers(nng/nng.h)
+nng_headers(nng/http.h)
 
 target_include_directories(nng PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(nng_testing PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -92,5 +94,6 @@ configure_package_config_file(${PROJECT_SOURCE_DIR}/cmake/${PROJECT_NAME}-config
         PATH_VARS INCLUDE_INSTALL_DIRS)
 
 install(FILES "${project_config}" "${version_config}"
+        ${PROJECT_SOURCE_DIR}/cmake/FindMbedTLS.cmake ${PROJECT_SOURCE_DIR}/cmake/FindwolfSSL.cmake
         DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}"
         COMPONENT Library)

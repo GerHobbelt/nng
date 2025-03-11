@@ -43,7 +43,7 @@ complete, creating a synchronous flow from an asynchronous one.
 ## Create Handle
 
 ```c
-int nng_aio_alloc(nng_aio **aiop, void (*callb)(void *), void *arg);
+nng_err nng_aio_alloc(nng_aio **aiop, void (*callb)(void *), void *arg);
 ```
 
 The {{i:`nng_aio_alloc`}} function creates an [`nng_aio`] object, with the
@@ -81,7 +81,7 @@ is safe to call from _aio_'s own callback.
 ## Cancellation
 
 ```c
-void nng_aio_abort(nng_aio *aio, int err);
+void nng_aio_abort(nng_aio *aio, nng_err err);
 void nng_aio_cancel(nng_aio *aio);
 void nng_aio_stop(nng_aio *aio);
 ```
@@ -169,7 +169,7 @@ This is the same test used internally by [`nng_aio_wait`].
 ## Result of Operation
 
 ```c
-int nng_aio_result(nng_aio *aio);
+nng_err nng_aio_result(nng_aio *aio);
 size_t nng_aio_count(nng_aio *aio);
 ```
 

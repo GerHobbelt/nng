@@ -48,9 +48,6 @@ extern void nuts_logger(
 #include <stdint.h>
 #include <string.h>
 
-// The following headers are provided for test code convenience.
-#include <nng/supplemental/tls/tls.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -87,14 +84,14 @@ extern void nuts_scratch_addr_zero(const char *, size_t, char *);
 // nuts_marry connects two sockets using inproc.  It uses socket
 // pipe hooks to ensure that it does not return before both sockets
 // are fully connected.
-extern int nuts_marry(nng_socket, nng_socket);
+extern nng_err nuts_marry(nng_socket, nng_socket);
 
 // nuts_marry_ex is like nuts_marry, but returns the pipes that
 // were connected, and includes an optional URL.  The pipe pointers and the
 // URL may be NULL if not needed.  If a port number is part of the URL
 // and is zero (i.e. if the URL contains :0) then listen is done first,
 // and the actual bound port will be used for the client.
-extern int nuts_marry_ex(
+extern nng_err nuts_marry_ex(
     nng_socket, nng_socket, const char *, nng_pipe *, nng_pipe *);
 
 // nuts_stream_send_start and nuts_stream_recv_start are used
@@ -209,23 +206,23 @@ extern const char *nuts_ecdsa_client_crt;
 
 // NUTS_SUCCESS tests for NNG success.  It reports the failure if it
 // did not.
-#define NUTS_PASS(cond)                                              \
-	do {                                                         \
-		int result_ = (cond);                                \
-		TEST_CHECK_(result_ == 0, "%s succeeds", #cond);     \
-		TEST_MSG("%s: expected success, got %s (%d)", #cond, \
-		    nng_strerror(result_), result_);                 \
+#define NUTS_PASS(cond)                                         \
+	do {                                                    \
+		nng_err result_ = (nng_err) (cond);             \
+		TEST_ASSERT_(result_ == NNG_OK,                 \
+		    "%s: expected success, got %s (%d)", #cond, \
+		    nng_strerror(result_), result_);            \
 	} while (0)
 
-// NUTS_ERROR tests for a specific NNG error code.
-#define NUTS_FAIL(cond, expect)                                             \
-	do {                                                                \
-		int result_ = (cond);                                       \
-		TEST_CHECK_(result_ == (expect), "%s fails with %s", #cond, \
-		    nng_strerror(expect));                                  \
-		TEST_MSG("%s: expected %s (%d), got %s (%d)", #cond,        \
-		    nng_strerror(expect), expect, nng_strerror(result_),    \
-		    result_);                                               \
+// NUTS_FAIL tests for a specific NNG error code.
+#define NUTS_FAIL(cond, expect)                                          \
+	do {                                                             \
+		nng_err result_ = (cond);                                \
+		TEST_CHECK_(result_ == (nng_err) (expect),               \
+		    "%s fails with %s", #cond, nng_strerror(expect));    \
+		TEST_MSG("%s: expected %s (%d), got %s (%d)", #cond,     \
+		    nng_strerror(expect), expect, nng_strerror(result_), \
+		    result_);                                            \
 	} while (0)
 
 #define NUTS_SEND(sock, string) \
@@ -327,5 +324,13 @@ extern const char *nuts_ecdsa_client_crt;
 #ifdef __cplusplus
 };
 #endif
+
+#define NUTS_HTTP_STATUS(conn, expect)                                        \
+	do {                                                                  \
+		TEST_CHECK(nng_http_get_status(conn) == (expect));            \
+		TEST_MSG("HTTP status: expected %d (%s) got %d (%s)", expect, \
+		    #expect, nng_http_get_status(conn),                       \
+		    nng_http_get_reason(conn));                               \
+	} while (0)
 
 #endif // NNG_TEST_NUTS_H

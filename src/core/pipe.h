@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 //
 // This software is supplied under the terms of the MIT License, a
@@ -15,9 +15,10 @@
 // OUTSIDE of the core is STRICTLY VERBOTEN.  NO DIRECT ACCESS BY PROTOCOLS OR
 // TRANSPORTS.
 
-#include "core/defs.h"
-#include "core/thread.h"
-#include "nng/nng.h"
+#include "defs.h"
+#include "stats.h"
+#include "thread.h"
+
 #include "sp/transport.h"
 
 // AIO
@@ -35,12 +36,12 @@ extern void nni_pipe_close(nni_pipe *);
 extern uint16_t nni_pipe_peer(nni_pipe *);
 
 // nni_pipe_getopt looks up the option.
-extern int nni_pipe_getopt(
+extern nng_err nni_pipe_getopt(
     nni_pipe *, const char *, void *, size_t *, nni_opt_type);
 
 // nni_pipe_find finds a pipe given its ID.  It places a hold on the
 // pipe, which must be released by the caller when it is done.
-extern int nni_pipe_find(nni_pipe **, uint32_t);
+extern nng_err nni_pipe_find(nni_pipe **, uint32_t);
 
 // nni_pipe_sock_id returns the socket id for the pipe (used by public API).
 extern uint32_t nni_pipe_sock_id(nni_pipe *);

@@ -1,5 +1,9 @@
 # Errors
 
+```c
+typedef enum ... nng_err;
+```
+
 Many _NNG_ functions can fail for a variety of reasons.
 These functions tend to return either zero on success,
 or a non-zero error code to indicate failure.
@@ -7,7 +11,11 @@ or a non-zero error code to indicate failure.
 which behave the same way, but _NNG_ does not use a separate
 _errno_ variable.}}
 
-All these error codes are `int`.
+All these error codes are `nng_err`.
+
+> [!NOTE]
+> Many APIs are still using `int`, but the `nng_err` enumeration can be used
+> instead, and will help with debugging.
 
 Not every possible error code is defined here, as sometimes
 an underlying system or library error code is "wrapped".
@@ -15,7 +23,7 @@ an underlying system or library error code is "wrapped".
 ## Human Readable Error Message
 
 ```c
-const char *nng_strerror(int err);
+const char *nng_strerror(nng_err err);
 ```
 
 The {{i:`nng_strerror`}} returns the human-readable description of the
@@ -65,8 +73,6 @@ future locale-specific strings may be presented instead.
 | `NNG_EWRITEONLY`<a name="NNG_EWRITEONLY"></a>     | 25                      | Write only resource. A read operation failed because the object only supports writes.                                                             |
 | `NNG_ECRYPTO`<a name="NNG_ECRYPTO"></a>           | 26                      | Cryptographic error. Usually indicates an invalid key was used for TLS.                                                                           |
 | `NNG_EPEERAUTH`<a name="NNG_EPEERAUTH"></a>       | 27                      | Peer could not be authenticated.                                                                                                                  |
-| `NNG_ENOARG`<a name="NNG_ENOARG"></a>             | 28                      | Option requires argument. A command-line option was supplied without an argument. Only used with [`nng_opts_parse`].                              |
-| `NNG_EAMBIGUOUS`<a name="NNG_EAMBIGUOUS"></a>     | 29                      | Ambiguous option. The command line option could not be unambiguously resolved. Only used with [`nng_opts_parse`].                                 |
 | `NNG_EBADTYPE`<a name="NNG_EBADTYPE"></a>         | 30                      | Incorrect type. A type-specific function was used for an object of the wrong type.                                                                |
 | `NNG_ECONNSHUT`<a name="NNG_ECONNSHUT"></a>       | 31                      | Connection shutdown. The connection was shut down and cannot be used.                                                                             |
 | `NNG_ESTOPPED`<a name="NNG_ESTOPPED"></a>         | 1000                    | Operation stopped. The operation was stopped with [`nng_aio_stop`] or [`nng_aio_close`].                                                          |

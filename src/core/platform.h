@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 // Copyright 2018 Devolutions <info@devolutions.net>
 //
@@ -20,6 +20,8 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#include "defs.h"
 
 // These are the APIs that a platform must implement to support nng.
 
@@ -83,11 +85,9 @@ extern void *nni_zalloc(size_t);
 // Most implementations can just call free() here.
 extern void nni_free(void *, size_t);
 
-typedef struct nni_plat_mtx    nni_plat_mtx;
-typedef struct nni_plat_rwlock nni_plat_rwlock;
-typedef struct nni_plat_cv     nni_plat_cv;
-typedef struct nni_plat_thr    nni_plat_thr;
-typedef struct nni_rwlock      nni_rwlock;
+typedef struct nni_plat_mtx nni_plat_mtx;
+typedef struct nni_plat_cv  nni_plat_cv;
+typedef struct nni_plat_thr nni_plat_thr;
 
 //
 // Threading & Synchronization Support
@@ -108,15 +108,6 @@ extern void nni_plat_mtx_lock(nni_plat_mtx *);
 // nni_plat_mtx_unlock unlocks the mutex.  This can only be performed by the
 // thread that owned the mutex.
 extern void nni_plat_mtx_unlock(nni_plat_mtx *);
-
-// read/write locks - these work like mutexes except that multiple readers
-// can acquire the lock.  These are not safe for recursive use, and it is
-// unspecified whether any measures are provided to prevent starvation.
-extern void nni_rwlock_init(nni_rwlock *);
-extern void nni_rwlock_fini(nni_rwlock *);
-extern void nni_rwlock_rdlock(nni_rwlock *);
-extern void nni_rwlock_wrlock(nni_rwlock *);
-extern void nni_rwlock_unlock(nni_rwlock *);
 
 // nni_plat_cv_init initializes a condition variable.  We require a mutex be
 // supplied with it, and that mutex must always be held when performing any
@@ -426,7 +417,7 @@ extern int nni_plat_udp_sockname(nni_plat_udp *, nni_sockaddr *);
 // in APIs to transport file descriptors, or across a fork/exec boundary (so
 // that child processes may use these with socket to inherit a socket that is
 // connected to the parent.)
-extern int nni_socket_pair(int[2]);
+extern nng_err nni_socket_pair(int[2]);
 
 //
 // File/Store Support

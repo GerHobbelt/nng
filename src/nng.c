@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 //
 // This software is supplied under the terms of the MIT License, a
@@ -79,35 +79,12 @@ nng_recv(nng_socket s, void *buf, size_t *szp, int flags)
 
 	// Note that while it would be nice to make this a zero copy operation,
 	// its not normally possible if a size was specified.
-	if ((rv = nng_recvmsg(s, &msg, flags & ~(NNG_FLAG_ALLOC))) != 0) {
+	if ((rv = nng_recvmsg(s, &msg, flags)) != 0) {
 		return (rv);
 	}
-	if (!(flags & NNG_FLAG_ALLOC)) {
-		memcpy(buf, nng_msg_body(msg),
-		    *szp > nng_msg_len(msg) ? nng_msg_len(msg) : *szp);
-		*szp = nng_msg_len(msg);
-	} else {
-		// We'd really like to avoid a separate data copy, but since
-		// we have allocated messages with headroom, we can't really
-		// make free() work on the base pointer.  We'd have to have
-		// some other API for this.  Folks that want zero copy had
-		// better use nng_recvmsg() instead.
-		void *nbuf;
-
-		if (nng_msg_len(msg) != 0) {
-			if ((nbuf = nni_alloc(nng_msg_len(msg))) == NULL) {
-				nng_msg_free(msg);
-				return (NNG_ENOMEM);
-			}
-
-			*(void **) buf = nbuf;
-			memcpy(nbuf, nni_msg_body(msg), nni_msg_len(msg));
-			*szp = nng_msg_len(msg);
-		} else {
-			*(void **) buf = NULL;
-			*szp           = 0;
-		}
-	}
+	memcpy(buf, nng_msg_body(msg),
+	    *szp > nng_msg_len(msg) ? nng_msg_len(msg) : *szp);
+	*szp = nng_msg_len(msg);
 	nni_msg_free(msg);
 	return (0);
 }
@@ -159,10 +136,6 @@ nng_send(nng_socket s, void *buf, size_t len, int flags)
 	if ((rv = nng_sendmsg(s, msg, flags)) != 0) {
 		// If nng_sendmsg() succeeded, then it took ownership.
 		nng_msg_free(msg);
-	} else {
-		if (flags & NNG_FLAG_ALLOC) {
-			nni_free(buf, len);
-		}
 	}
 	return (rv);
 }
@@ -207,7 +180,7 @@ nng_sendmsg(nng_socket s, nng_msg *msg, int flags)
 }
 
 void
-nng_recv_aio(nng_socket s, nng_aio *aio)
+nng_socket_recv(nng_socket s, nng_aio *aio)
 {
 	nni_sock *sock;
 	int       rv;
@@ -222,7 +195,7 @@ nng_recv_aio(nng_socket s, nng_aio *aio)
 }
 
 void
-nng_send_aio(nng_socket s, nng_aio *aio)
+nng_socket_send(nng_socket s, nng_aio *aio)
 {
 	nni_sock *sock;
 	int       rv;
@@ -422,12 +395,6 @@ nng_ctx_get_size(nng_ctx id, const char *n, size_t *v)
 }
 
 int
-nng_ctx_get_uint64(nng_ctx id, const char *n, uint64_t *v)
-{
-	return (ctx_get(id, n, v, NULL, NNI_TYPE_UINT64));
-}
-
-int
 nng_ctx_get_ms(nng_ctx id, const char *n, nng_duration *v)
 {
 	return (ctx_get(id, n, v, NULL, NNI_TYPE_DURATION));
@@ -463,12 +430,6 @@ int
 nng_ctx_set_size(nng_ctx id, const char *n, size_t v)
 {
 	return (ctx_set(id, n, &v, sizeof(v), NNI_TYPE_SIZE));
-}
-
-int
-nng_ctx_set_uint64(nng_ctx id, const char *n, uint64_t v)
-{
-	return (ctx_set(id, n, &v, sizeof(v), NNI_TYPE_UINT64));
 }
 
 int
@@ -744,12 +705,6 @@ nng_dialer_set_size(nng_dialer id, const char *n, size_t v)
 }
 
 int
-nng_dialer_set_uint64(nng_dialer id, const char *n, uint64_t v)
-{
-	return (dialer_set(id, n, &v, sizeof(v), NNI_TYPE_UINT64));
-}
-
-int
 nng_dialer_set_ms(nng_dialer id, const char *n, nng_duration v)
 {
 	return (dialer_set(id, n, &v, sizeof(v), NNI_TYPE_DURATION));
@@ -798,12 +753,6 @@ int
 nng_dialer_get_size(nng_dialer id, const char *n, size_t *v)
 {
 	return (dialer_get(id, n, v, NULL, NNI_TYPE_SIZE));
-}
-
-int
-nng_dialer_get_uint64(nng_dialer id, const char *n, uint64_t *v)
-{
-	return (dialer_get(id, n, v, NULL, NNI_TYPE_UINT64));
 }
 
 int
@@ -884,12 +833,6 @@ nng_listener_set_size(nng_listener id, const char *n, size_t v)
 }
 
 int
-nng_listener_set_uint64(nng_listener id, const char *n, uint64_t v)
-{
-	return (listener_set(id, n, &v, sizeof(v), NNI_TYPE_UINT64));
-}
-
-int
 nng_listener_set_ms(nng_listener id, const char *n, nng_duration v)
 {
 	return (listener_set(id, n, &v, sizeof(v), NNI_TYPE_DURATION));
@@ -939,12 +882,6 @@ int
 nng_listener_get_size(nng_listener id, const char *n, size_t *v)
 {
 	return (listener_get(id, n, v, NULL, NNI_TYPE_SIZE));
-}
-
-int
-nng_listener_get_uint64(nng_listener id, const char *n, uint64_t *v)
-{
-	return (listener_get(id, n, v, NULL, NNI_TYPE_UINT64));
 }
 
 int
@@ -1090,12 +1027,6 @@ nng_socket_set_size(nng_socket id, const char *n, size_t v)
 }
 
 int
-nng_socket_set_uint64(nng_socket id, const char *n, uint64_t v)
-{
-	return (socket_set(id, n, &v, sizeof(v), NNI_TYPE_UINT64));
-}
-
-int
 nng_socket_set_ms(nng_socket id, const char *n, nng_duration v)
 {
 	return (socket_set(id, n, &v, sizeof(v), NNI_TYPE_DURATION));
@@ -1131,12 +1062,6 @@ int
 nng_socket_get_size(nng_socket id, const char *n, size_t *v)
 {
 	return (socket_get(id, n, v, NULL, NNI_TYPE_SIZE));
-}
-
-int
-nng_socket_get_uint64(nng_socket id, const char *n, uint64_t *v)
-{
-	return (socket_get(id, n, v, NULL, NNI_TYPE_UINT64));
 }
 
 int
@@ -1249,10 +1174,10 @@ nng_socket_raw(nng_socket id, bool *rawp)
 	return (0);
 }
 
-int
+nng_err
 nng_pipe_notify(nng_socket s, nng_pipe_ev ev, nng_pipe_cb cb, void *arg)
 {
-	int       rv;
+	nng_err   rv;
 	nni_sock *sock;
 
 	if ((rv = nni_sock_find(&sock, s.id)) != 0) {
@@ -1261,7 +1186,7 @@ nng_pipe_notify(nng_socket s, nng_pipe_ev ev, nng_pipe_cb cb, void *arg)
 
 	nni_sock_set_pipe_cb(sock, ev, cb, arg);
 	nni_sock_rele(sock);
-	return (0);
+	return (NNG_OK);
 }
 
 void
@@ -1309,7 +1234,7 @@ nng_device(nng_socket s1, nng_socket s2)
 }
 
 static const struct {
-	int         code;
+	nng_err     code;
 	const char *msg;
 } nni_errors[] = {
 	// clang-format off
@@ -1341,8 +1266,6 @@ static const struct {
 	{ NNG_EWRITEONLY, "Write only resource" },
 	{ NNG_ECRYPTO, "Cryptographic error" },
 	{ NNG_EPEERAUTH, "Peer could not be authenticated" },
-	{ NNG_ENOARG, "Option requires argument" },
-	{ NNG_EAMBIGUOUS, "Ambiguous option" },
 	{ NNG_EBADTYPE, "Incorrect type" },
 	{ NNG_ECONNSHUT, "Connection shutdown" },
 	{ NNG_ESTOPPED, "Operation stopped"},
@@ -1353,7 +1276,7 @@ static const struct {
 
 // Misc.
 const char *
-nng_strerror(int num)
+nng_strerror(nng_err num)
 {
 	static char unknownerrbuf[32];
 	for (int i = 0; nni_errors[i].msg != NULL; i++) {
@@ -1378,10 +1301,10 @@ nng_strerror(int num)
 	return (unknownerrbuf);
 }
 
-static int
+static nng_err
 pipe_get(nng_pipe p, const char *name, void *val, size_t *szp, nni_type t)
 {
-	int       rv;
+	nng_err   rv;
 	nni_pipe *pipe;
 
 	if ((rv = nni_pipe_find(&pipe, p.id)) != 0) {
@@ -1392,43 +1315,37 @@ pipe_get(nng_pipe p, const char *name, void *val, size_t *szp, nni_type t)
 	return (rv);
 }
 
-int
+nng_err
 nng_pipe_get_int(nng_pipe id, const char *n, int *v)
 {
 	return (pipe_get(id, n, v, NULL, NNI_TYPE_INT32));
 }
 
-int
+nng_err
 nng_pipe_get_bool(nng_pipe id, const char *n, bool *v)
 {
 	return (pipe_get(id, n, v, NULL, NNI_TYPE_BOOL));
 }
 
-int
+nng_err
 nng_pipe_get_size(nng_pipe id, const char *n, size_t *v)
 {
 	return (pipe_get(id, n, v, NULL, NNI_TYPE_SIZE));
 }
 
-int
-nng_pipe_get_uint64(nng_pipe id, const char *n, uint64_t *v)
-{
-	return (pipe_get(id, n, v, NULL, NNI_TYPE_UINT64));
-}
-
-int
+nng_err
 nng_pipe_get_string(nng_pipe id, const char *n, char **v)
 {
 	return (pipe_get(id, n, v, NULL, NNI_TYPE_STRING));
 }
 
-int
+nng_err
 nng_pipe_get_ms(nng_pipe id, const char *n, nng_duration *v)
 {
 	return (pipe_get(id, n, v, NULL, NNI_TYPE_DURATION));
 }
 
-int
+nng_err
 nng_pipe_get_addr(nng_pipe id, const char *n, nng_sockaddr *v)
 {
 	return (pipe_get(id, n, v, NULL, NNI_TYPE_SOCKADDR));
@@ -1471,10 +1388,10 @@ nng_pipe_listener(nng_pipe p)
 	return (l);
 }
 
-int
+nng_err
 nng_pipe_close(nng_pipe p)
 {
-	int       rv;
+	nng_err   rv;
 	nni_pipe *pipe;
 
 	if ((rv = nni_pipe_find(&pipe, p.id)) != 0) {
@@ -1482,7 +1399,7 @@ nng_pipe_close(nng_pipe p)
 	}
 	nni_pipe_close(pipe);
 	nni_pipe_rele(pipe);
-	return (0);
+	return (NNG_OK);
 }
 
 int
@@ -1911,11 +1828,11 @@ nng_msg_set_pipe(nng_msg *msg, nng_pipe p)
 	nni_msg_set_pipe(msg, p.id);
 }
 
-int
+nng_err
 nng_aio_alloc(nng_aio **app, void (*cb)(void *), void *arg)
 {
 	nng_aio *aio;
-	int      rv;
+	nng_err  rv;
 
 	if ((rv = nni_aio_alloc(&aio, (nni_cb) cb, arg)) == 0) {
 		nng_aio_set_timeout(aio, NNG_DURATION_DEFAULT);
@@ -1942,7 +1859,7 @@ nng_sleep_aio(nng_duration ms, nng_aio *aio)
 	nni_sleep_aio(ms, aio);
 }
 
-int
+nng_err
 nng_aio_result(nng_aio *aio)
 {
 	return (nni_aio_result(aio));
@@ -1973,7 +1890,7 @@ nng_aio_busy(nng_aio *aio)
 }
 
 void
-nng_aio_abort(nng_aio *aio, int err_code)
+nng_aio_abort(nng_aio *aio, nng_err err_code)
 {
 	nni_aio_abort(aio, err_code);
 }
@@ -2218,7 +2135,7 @@ nng_random(void)
 	return (nni_random());
 }
 
-int
+nng_err
 nng_socket_pair(int fds[2])
 {
 	return (nni_socket_pair(fds));
@@ -2259,4 +2176,59 @@ nng_udp_multicast_membership(nng_udp *udp, nng_sockaddr *sa, bool join)
 {
 	return (
 	    nni_plat_udp_multicast_membership((nni_plat_udp *) udp, sa, join));
+}
+
+struct nng_id_map_s {
+	nni_id_map m;
+};
+
+int
+nng_id_map_alloc(nng_id_map **map, uint64_t lo, uint64_t hi, int flags)
+{
+	nng_id_map *m;
+
+	if ((m = NNI_ALLOC_STRUCT(m)) == NULL) {
+		return (NNG_ENOMEM);
+	}
+	nni_id_map_init(
+	    &m->m, lo, hi, (flags & NNG_MAP_RANDOM) ? true : false);
+	*map = m;
+	return (0);
+}
+
+void
+nng_id_map_free(nng_id_map *map)
+{
+	nni_id_map_fini(&map->m);
+	NNI_FREE_STRUCT(map);
+}
+
+void *
+nng_id_get(nng_id_map *map, uint64_t id)
+{
+	return (nni_id_get(&map->m, id));
+}
+
+int
+nng_id_set(nng_id_map *map, uint64_t id, void *val)
+{
+	return (nni_id_set(&map->m, id, val));
+}
+
+int
+nng_id_remove(nng_id_map *map, uint64_t id)
+{
+	return (nni_id_remove(&map->m, id));
+}
+
+int
+nng_id_alloc(nng_id_map *map, uint64_t *id, void *val)
+{
+	return (nni_id_alloc(&map->m, id, val));
+}
+
+bool
+nng_id_visit(nng_id_map *map, uint64_t *id, void **valp, uint32_t *cursor)
+{
+	return (nni_id_visit(&map->m, id, valp, cursor));
 }

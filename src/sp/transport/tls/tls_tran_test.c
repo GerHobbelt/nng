@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 // Copyright 2018 Devolutions <info@devolutions.net>
 // Copyright 2018 Cody Piersall <cody.piersall@gmail.com>
@@ -11,7 +11,6 @@
 //
 
 #include "nng/nng.h"
-#include "nng/supplemental/tls/tls.h"
 #include <nuts.h>
 
 // TLS tests.
@@ -302,8 +301,9 @@ test_tls_recv_max(void)
 	nng_dialer      d;
 	size_t          sz;
 	char           *addr;
+	const nng_url  *url;
 
-	NUTS_ADDR(addr, "tls+tcp");
+	NUTS_ADDR_ZERO(addr, "tls+tcp");
 
 	c0 = tls_server_config();
 	c1 = tls_client_config();
@@ -316,9 +316,10 @@ test_tls_recv_max(void)
 	NUTS_TRUE(sz == 200);
 	NUTS_PASS(nng_listener_set_size(l, NNG_OPT_RECVMAXSZ, 100));
 	NUTS_PASS(nng_listener_start(l, 0));
+	NUTS_PASS(nng_listener_get_url(l, &url));
 
 	NUTS_OPEN(s1);
-	NUTS_PASS(nng_dialer_create(&d, s1, addr));
+	NUTS_PASS(nng_dialer_create_url(&d, s1, url));
 	NUTS_PASS(nng_dialer_set_tls(d, c1));
 	NUTS_PASS(nng_dialer_start(d, 0));
 	NUTS_PASS(nng_send(s1, msg, 95, 0));
@@ -347,12 +348,13 @@ test_tls_psk(void)
 	size_t          sz;
 	char           *addr;
 	uint8_t         key[32];
+	const nng_url  *url;
 
 	for (unsigned i = 0; i < sizeof(key); i++) {
 		key[i] = rand() % 0xff;
 	}
 
-	NUTS_ADDR(addr, "tls+tcp");
+	NUTS_ADDR_ZERO(addr, "tls+tcp");
 
 	c0 = tls_config_psk(NNG_TLS_MODE_SERVER, "identity", key, sizeof key);
 	c1 = tls_config_psk(NNG_TLS_MODE_CLIENT, "identity", key, sizeof key);
@@ -361,9 +363,10 @@ test_tls_psk(void)
 	NUTS_PASS(nng_listener_create(&l, s0, addr));
 	NUTS_PASS(nng_listener_set_tls(l, c0));
 	NUTS_PASS(nng_listener_start(l, 0));
+	NUTS_PASS(nng_listener_get_url(l, &url));
 
 	NUTS_OPEN(s1);
-	NUTS_PASS(nng_dialer_create(&d, s1, addr));
+	NUTS_PASS(nng_dialer_create_url(&d, s1, url));
 	NUTS_PASS(nng_dialer_set_tls(d, c1));
 	NUTS_PASS(nng_dialer_start(d, 0));
 	NUTS_PASS(nng_send(s1, msg, 95, 0));

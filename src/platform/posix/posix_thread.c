@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 //
 // This software is supplied under the terms of the MIT License, a
@@ -156,53 +156,6 @@ nni_plat_mtx_unlock(nni_plat_mtx *mtx)
 }
 
 void
-nni_rwlock_init(nni_rwlock *rwl)
-{
-	while (pthread_rwlock_init(&rwl->rwl, NULL) != 0) {
-		// We must have memory exhaustion -- ENOMEM, or
-		// in some cases EAGAIN.  Wait a bit before we try to
-		// give things a chance to settle down.
-		nni_msleep(10);
-	}
-}
-
-void
-nni_rwlock_fini(nni_rwlock *rwl)
-{
-	int rv;
-	if ((rv = pthread_rwlock_destroy(&rwl->rwl)) != 0) {
-		nni_panic("pthread_rwlock_destroy: %s", strerror(rv));
-	}
-}
-
-void
-nni_rwlock_rdlock(nni_rwlock *rwl)
-{
-	int rv;
-	if ((rv = pthread_rwlock_rdlock(&rwl->rwl)) != 0) {
-		nni_panic("pthread_rwlock_rdlock: %s", strerror(rv));
-	}
-}
-
-void
-nni_rwlock_wrlock(nni_rwlock *rwl)
-{
-	int rv;
-	if ((rv = pthread_rwlock_wrlock(&rwl->rwl)) != 0) {
-		nni_panic("pthread_rwlock_wrlock: %s", strerror(rv));
-	}
-}
-
-void
-nni_rwlock_unlock(nni_rwlock *rwl)
-{
-	int rv;
-	if ((rv = pthread_rwlock_unlock(&rwl->rwl)) != 0) {
-		nni_panic("pthread_rwlock_unlock: %s", strerror(rv));
-	}
-}
-
-void
 nni_plat_cv_init(nni_plat_cv *cv, nni_plat_mtx *mtx)
 {
 	// See the comments in nni_plat_mtx_init.  Almost everywhere this
@@ -211,7 +164,7 @@ nni_plat_cv_init(nni_plat_cv *cv, nni_plat_mtx *mtx)
 	while (pthread_cond_init(&cv->cv, &nni_cvattr) != 0) {
 		nni_msleep(10);
 	}
-	cv->mtx = mtx;
+	cv->mtx = &mtx->mtx;
 }
 
 void
@@ -229,7 +182,7 @@ nni_plat_cv_wake1(nni_plat_cv *cv)
 void
 nni_plat_cv_wait(nni_plat_cv *cv)
 {
-	nni_pthread_cond_wait(&cv->cv, &cv->mtx->mtx);
+	nni_pthread_cond_wait(&cv->cv, cv->mtx);
 }
 
 int
@@ -241,7 +194,7 @@ nni_plat_cv_until(nni_plat_cv *cv, nni_time until)
 	ts.tv_sec  = until / 1000;
 	ts.tv_nsec = (until % 1000) * 1000000;
 
-	return (nni_pthread_cond_timedwait(&cv->cv, &cv->mtx->mtx, &ts));
+	return (nni_pthread_cond_timedwait(&cv->cv, cv->mtx, &ts));
 }
 
 void

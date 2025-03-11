@@ -154,10 +154,10 @@ a result of [`NNG_ECLOSED`].
 ```c
 int nng_send(nng_socket s, void *data, size_t size, int flags);
 int nng_sendmsg(nng_socket s, nng_msg *msg, int flags);
-void nng_send_aio(nng_socket s, nng_aio *aio);
+void nng_socket_send(nng_socket s, nng_aio *aio);
 ```
 
-These functions ({{i:`nng_send`}}, {{i:`nng_sendmsg`}}, and {{i:`nng_send_aio`}}) send
+These functions ({{i:`nng_send`}}, {{i:`nng_sendmsg`}}, and {{i:`nng_socket_send`}}) send
 messages over the socket _s_. The differences in their behaviors are as follows.
 
 > [!NOTE]
@@ -177,24 +177,12 @@ made up of zero or more of the following values:
   If the socket cannot accept more data at this time, it does not block, but returns immediately
   with a status of [`NNG_EAGAIN`]. If this flag is absent, the function will wait until data can be sent.
 
-- {{i:`NNG_FLAG_ALLOC`}}: <a name="NNG_FLAG_ALLOC"></a>
-  The _data_ was allocated using [`nng_alloc`] or was obtained from a call to [`nng_recv`] also with
-  the `NNG_FLAG_ALLOC` flag. If this function succeeds, then it will dispose of the _data_, deallocating it
-  once the transmission is complete. If this function returns a non-zero status, the caller retains the responsibility
-  of disposing the data. The benefit of this flag is that it can eliminate a data copy and allocation. Without the flag
-  the socket will make a duplicate copy of _data_ for use by the operation, before returning to the caller.
-
 > [!NOTE]
 > Regardless of the presence or absence of `NNG_FLAG_NONBLOCK`, there may
 > be queues between the sender and the receiver.
 > Furthermore, there is no guarantee that the message has actually been delivered.
 > Finally, with some protocols, the semantic is implicitly `NNG_FLAG_NONBLOCK`,
 > such as with [PUB][pub] sockets, which are best-effort delivery only.
-
-> [!IMPORTANT]
-> When using `NNG_FLAG_ALLOC`, it is important that the value of _size_ match the actual allocated size of the data.
-> Using an incorrect size results in unspecified behavior, which may include heap corruption, program crashes,
-> or other undesirable effects.
 
 ### nng_sendmsg
 
@@ -210,9 +198,9 @@ cannot accept more data for sending. In such a case, it will return [`NNG_EAGAIN
 > This function is preferred over [`nng_send`], as it gives access to the message structure and eliminates both
 > a data copy and allocation.
 
-### nng_send_aio
+### nng_socket_send
 
-The `nng_send_aio` function sends a message asynchronously, using the [`nng_aio`] _aio_, over the socket _s_.
+The `nng_socket_send` function sends a message asynchronously, using the [`nng_aio`] _aio_, over the socket _s_.
 The message to send must have been set on _aio_ using the [`nng_aio_set_msg`] function.
 
 If the operation completes successfully, then the socket will have disposed of the message.
@@ -232,10 +220,10 @@ For example, the message may be sitting in queue, or located in TCP buffers, or 
 ```c
 int nng_recv(nng_socket s, void *data, size_t *sizep, int flags);
 int nng_recvmsg(nng_socket s, nng_msg **msgp, int flags);
-void nng_recv_aio(nng_socket s, nng_aio *aio);
+void nng_socket_recv(nng_socket s, nng_aio *aio);
 ```
 
-These functions ({{i:`nng_recv`}}, {{i:`nng_recvmsg`}}, and {{i:`nng_recv_aio`}}) receive
+These functions ({{i:`nng_recv`}}, {{i:`nng_recvmsg`}}, and {{i:`nng_socket_recv`}}) receive
 messages over the socket _s_. The differences in their behaviors are as follows.
 
 > [!NOTE]
@@ -248,8 +236,7 @@ messages over the socket _s_. The differences in their behaviors are as follows.
 ### nng_recv
 
 The `nng_recv` function is the simplest to use, but is the least efficient.
-It receives the content in _data_, as a message size (in bytes) of up to the value stored in _sizep_,
-unless the `NNG_FLAG_ALLOC` flag is set in _flags_ (see below.)
+It receives the content in _data_, as a message size (in bytes) of up to the value stored in _sizep_.
 
 Upon success, the size of the message received will be stored in _sizep_.
 
@@ -258,17 +245,6 @@ The _flags_ is a bit mask made up of zero or more of the following values:
 - {{i:`NNG_FLAG_NONBLOCK`}}:
   If the socket has no messages pending for reception at this time, it does not block, but returns immediately
   with a status of [`NNG_EAGAIN`]. If this flag is absent, the function will wait until data can be received.
-
-- {{i:`NNG_FLAG_ALLOC`}}:
-  Instead of receiving the message into _data_, a new buffer will be allocated exactly large enough to hold
-  the message. A pointer to that buffer will be stored at the location specified by _data_. This provides a form
-  of zero-copy operation. The caller should dispose of the buffer using [`nng_free`] or by sending using
-  [`nng_send`] with the [`NNG_FLAG_ALLOC`] flag.
-
-> [!IMPORTANT]
-> When using `NNG_FLAG_ALLOC`, it is important that the value of _size_ match the actual allocated size of the data.
-> Using an incorrect size results in unspecified behavior, which may include heap corruption, program crashes,
-> or other undesirable effects.
 
 ### nng_recvmsg
 
@@ -279,11 +255,11 @@ has no messages available to receive. In such a case, it will return [`NNG_EAGAI
 
 > [!TIP]
 > This function is preferred over [`nng_recv`], as it gives access to the message structure and eliminates both
-> a data copy and allocation, even when `nng_recv` is using `NNG_FLAG_ALLOC`.
+> a data copy and allocation.
 
-### nng_recv_aio
+### nng_socket_recv
 
-The `nng_send_aio` function receives a message asynchronously, using the [`nng_aio`] _aio_, over the socket _s_.
+The `nng_socket_send` function receives a message asynchronously, using the [`nng_aio`] _aio_, over the socket _s_.
 On success, the received message can be retrieved from the _aio_ using the [`nng_aio_get_msg`] function.
 
 > [!NOTE]
@@ -294,6 +270,55 @@ On success, the received message can be retrieved from the _aio_ using the [`nng
 > This is the preferred function to use for receiving data on a socket. While it does require a few extra
 > steps on the part of the application, the lowest latencies and highest performance will be achieved by using
 > this function instead of [`nng_recv`] or [`nng_recvmsg`].
+
+## Socket Options
+
+```c
+int nng_socket_get_bool(nng_socket s, const char *opt, bool *valp);
+int nng_socket_get_int(nng_socket s, const char *opt, int *valp);
+int nng_socket_get_ms(nng_socket s, const char *opt, nng_duration *valp);
+int nng_socket_get_size(nng_socket s, const char *opt, size_t *valp);
+
+int nng_socket_set_bool(nng_socket s, const char *opt, int val);
+int nng_socket_set_int(nng_socket s, const char *opt, int val);
+int nng_socket_set_ms(nng_socket s, const char *opt, nng_duration val);
+int nng_socket_set_size(nng_socket s, const char *opt, size_t val);
+```
+
+Protocols usually have protocol specific behaviors that can be adjusted via options.
+
+These functions are used to retrieve or change the value of an option named _opt_ from the context _ctx_.
+The `nng_socket_get_` functions retrieve the value from the socket _s_, and store it in the location _valp_ references.
+The `nng_socket_set_` functions change the value for the socket _s_, taking it from _val_.
+
+These functions access an option as a specific type. The protocol documentation will have details about which options
+are available, whether they can be read or written, and the appropriate type to use.
+
+> [!NOTE]
+> Socket options are are used to tune the behavior of the higher level protocol. To change the options
+> for an underlying transport, the option should be set on the [dialer] or [listener] instead of the [socket].
+
+### Common Options
+
+The following options are available for many protocols, and always use the same types and semantics described below.
+
+| Option                                                | Type           | Description                                                                                                                                                                       |
+| ----------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NNG_OPT_MAXTTL`<a name="NNG_OPT_MAXTTL"></a>         | `int`          | Maximum number of traversals across an [`nng_device`] device, to prevent forwarding loops. May be 1-255, inclusive. Normally defaults to 8.                                       |
+| `NNG_OPT_RECONNMAXT`<a name="NNG_OPT_RECONNMAXT"></a> | `nng_duration` | Maximum time [dialers][dialer] will delay before trying after failing to connect.                                                                                                 |
+| `NNG_OPT_RECONNMINT`<a name="NNG_OPT_RECONNMINT"></a> | `nng_duration` | Minimum time [dialers][dialer] will delay before trying after failing to connect.                                                                                                 |
+| `NNG_OPT_RECVBUF`<a name="NNG_OPT_RECVBUF"></a>       | `int`          | Maximum number of messages (0-8192) to buffer locally when receiving.                                                                                                             |
+| `NNG_OPT_RECVMAXSZ`<a name="NNG_OPT_RECVMAXSZ"></a>   | `size_t`       | Maximum message size acceptable for receiving. Zero means unlimited. Intended to prevent remote abuse. Can be tuned independently on [dialers][dialer] and [listeners][listener]. |
+| `NNG_OPT_RECVTIMEO`<a name="NNG_OPT_RECVTIMEO"></a>   | `nng_duration` | Default timeout (ms) for receiving messages.                                                                                                                                      |
+| `NNG_OPT_SENDBUF`<a name="NNG_OPT_SENDBUF"></a>       | `int`          | Maximum number of messages (0-8192) to buffer when sending messages.                                                                                                              |
+| `NNG_OPT_SENDTIMEO`<a name="NNG_OPT_SENDTIMEO"></a>   | `nng_duration` | Default timeout (ms) for sending messages.                                                                                                                                        |
+
+&nbsp;
+
+> [!NOTE]
+> The `NNG_OPT_RECONNMAXT`, `NNG_OPT_RECONNMINT`, and `NNG_OPT_RECVMAXSZ` options are just the initial defaults that [dialers][dialer]
+> (and for `NNG_OPT_RECVMAXSZ` also [listeners][listener])
+> will use. After the dialer or listener is created, changes to the socket's value will have no affect on that dialer or listener.
 
 ## Polling Socket Events
 
@@ -346,7 +371,7 @@ nng_socket s = NNG_SOCKET_INITIALIZER;
 
 ### Example 2: Publishing a Timestamp
 
-This example demonstrates the use of [`nng_aio`], [`nng_send_aio`], and [`nng_sleep_aio`] to
+This example demonstrates the use of [`nng_aio`], [`nng_socket_send`], and [`nng_sleep_aio`] to
 build a service that publishes a timestamp at one second intervals. Error handling is elided for the
 sake of clarity.
 
@@ -378,7 +403,7 @@ void callback(void *arg) {
         now = nng_clock();
         nng_msg_append(msg, &now, sizeof (now)); // note: native endian
         nng_aio_set_msg(state->aio, msg);
-        nng_send_aio(state->s, state->aio);
+        nng_socket_send(state->s, state->aio);
     } else {
         state->sleeping = true;
         nng_sleep_aio(1000, state->aio); // 1000 ms == 1 second
@@ -401,7 +426,7 @@ int main(int argc, char **argv) {
 
 ### Example 3: Watching a Periodic Timestamp
 
-This example demonstrates the use of [`nng_aio`], [`nng_recv_aio`], to build a client to
+This example demonstrates the use of [`nng_aio`], [`nng_socket_recv`], to build a client to
 watch for messages received from the service created in Example 2.
 Error handling is elided for the sake of clarity.
 
@@ -432,7 +457,7 @@ void callback(void *arg) {
     printf("Timestamp is %lu\n", (unsigned long)now);
     nng_msg_free(msg);
     nng_aio_set_msg(state->aio, NULL);
-    nng_recv_aio(state->s, state->aio);
+    nng_socket_recv(state->s, state->aio);
 }
 
 int main(int argc, char **argv) {
@@ -442,7 +467,7 @@ int main(int argc, char **argv) {
     nng_sub0_open(&state.s);
     nng_sub0_socket_subscribe(state.s, NULL, 0); // subscribe to everything
     nng_dial(state.s, url, NULL, 0);
-    nng_recv_aio(state.s, state.aio); // kick it off right away
+    nng_socket_recv(state.s, state.aio); // kick it off right away
     for(;;) {
         nng_msleep(0x7FFFFFFF); // infinite, could use pause or sigsuspend
     }

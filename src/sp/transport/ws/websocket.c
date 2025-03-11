@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 // Copyright 2019 Devolutions <info@devolutions.net>
 //
@@ -15,8 +15,6 @@
 
 #include "core/nng_impl.h"
 #include "supplemental/websocket/websocket.h"
-
-#include <nng/supplemental/tls/tls.h>
 
 typedef struct ws_dialer   ws_dialer;
 typedef struct ws_listener ws_listener;
@@ -317,12 +315,12 @@ static const nni_option ws_pipe_options[] = {
 	}
 };
 
-static int
+static nng_err
 wstran_pipe_getopt(
     void *arg, const char *name, void *buf, size_t *szp, nni_type t)
 {
 	ws_pipe *p = arg;
-	int      rv;
+	nng_err  rv;
 
 	if ((rv = nni_stream_get(p->ws, name, buf, szp, t)) == NNG_ENOTSUP) {
 		rv = nni_getopt(ws_pipe_options, name, p, buf, szp, t);

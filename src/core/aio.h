@@ -1,5 +1,5 @@
 //
-// Copyright 2023 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 //
 // This software is supplied under the terms of the MIT License, a
@@ -37,7 +37,7 @@ extern void nni_aio_reap(nni_aio *);
 // is called with the supplied argument when the operation is complete.
 // If NULL is supplied for the callback, then nni_aio_wake is used in its
 // place, and the aio is used for the argument.
-extern int nni_aio_alloc(nni_aio **, nni_cb, void *arg);
+extern nng_err nni_aio_alloc(nni_aio **, nni_cb, void *arg);
 
 // nni_aio_free frees the aio, releasing resources (locks)
 // associated with it. This is safe to call on zeroed memory.
@@ -85,7 +85,7 @@ extern nni_msg *nni_aio_get_msg(nni_aio *);
 // for the operation.  It is only valid to call this when the operation is
 // complete (such as when the callback is executed or after nni_aio_wait
 // is performed).
-extern int nni_aio_result(nni_aio *);
+extern nng_err nni_aio_result(nni_aio *);
 
 // nni_aio_count returns the number of bytes of data transferred, if any.
 // As with nni_aio_result, it is only defined if the I/O operation has
@@ -114,19 +114,19 @@ extern void nni_aio_list_remove(nni_aio *);
 extern int  nni_aio_list_active(nni_aio *);
 
 // nni_aio_finish is called by the provider when an operation is complete.
-extern void nni_aio_finish(nni_aio *, int, size_t);
+extern void nni_aio_finish(nni_aio *, nng_err, size_t);
 // nni_aio_finish_sync is to be called when a synchronous completion is
 // desired.  It is very important that the caller not hold any locks when
 // calling this, but it is useful for chaining completions to minimize
 // context switch overhead during completions.
-extern void nni_aio_finish_sync(nni_aio *, int, size_t);
-extern void nni_aio_finish_error(nni_aio *, int);
+extern void nni_aio_finish_sync(nni_aio *, nng_err, size_t);
+extern void nni_aio_finish_error(nni_aio *, nng_err);
 extern void nni_aio_finish_msg(nni_aio *, nni_msg *);
 
 // nni_aio_abort is used to abort an operation.  Any pending I/O or
 // timeouts are canceled if possible, and the callback will be returned
 // with the indicated result (NNG_ECLOSED or NNG_ECANCELED is recommended.)
-extern void nni_aio_abort(nni_aio *, int rv);
+extern void nni_aio_abort(nni_aio *, nng_err);
 
 extern void *nni_aio_get_prov_data(nni_aio *);
 extern void  nni_aio_set_prov_data(nni_aio *, void *);
@@ -138,7 +138,7 @@ extern size_t nni_aio_iov_advance(nni_aio *, size_t);
 // nni_aio_iov_count returns the number of bytes referenced by the aio iov.
 extern size_t nni_aio_iov_count(nni_aio *);
 
-extern int nni_aio_set_iov(nni_aio *, unsigned, const nni_iov *);
+extern nng_err nni_aio_set_iov(nni_aio *, unsigned, const nni_iov *);
 
 extern void         nni_aio_set_timeout(nni_aio *, nng_duration);
 extern void         nni_aio_set_expire(nni_aio *, nni_time);
@@ -186,11 +186,11 @@ extern void nni_aio_completions_run(nni_aio_completions *);
 // appropriate) to the completion list.  This should be done while the
 // appropriate lock is held.  The aio must not be scheduled.
 extern void nni_aio_completions_add(
-    nni_aio_completions *, nni_aio *, int, size_t);
+    nni_aio_completions *, nni_aio *, nng_err, size_t);
 
-extern int  nni_aio_sys_init(nng_init_params *);
-extern bool nni_aio_sys_drain(void);
-extern void nni_aio_sys_fini(void);
+extern nng_err nni_aio_sys_init(nng_init_params *);
+extern bool    nni_aio_sys_drain(void);
+extern void    nni_aio_sys_fini(void);
 
 typedef struct nni_aio_expire_q nni_aio_expire_q;
 
@@ -206,7 +206,7 @@ struct nng_aio {
 	size_t       a_count;      // Bytes transferred (I/O only)
 	nni_time     a_expire;     // Absolute timeout
 	nni_duration a_timeout;    // Relative timeout
-	int          a_result;     // Result code (nng_errno)
+	nng_err      a_result;     // Result code (nng_errno)
 	bool         a_stop;       // Shutting down (no new operations)
 	bool         a_sleep;      // Sleeping with no action
 	bool         a_expire_ok;  // Expire from sleep is ok

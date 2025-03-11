@@ -1,5 +1,5 @@
 //
-// Copyright 2022 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 //
 // This software is supplied under the terms of the MIT License, a
@@ -13,8 +13,6 @@
 #endif
 
 #include <nng/nng.h>
-#include <nng/protocol/pair1/pair.h>
-#include <nng/supplemental/tls/tls.h>
 
 #include "convey.h"
 #include "stubs.h"
@@ -134,7 +132,6 @@ check_props(nng_msg *msg)
 	nng_pipe     p;
 	nng_sockaddr la;
 	nng_sockaddr ra;
-	char        *buf;
 
 	p = nng_msg_get_pipe(msg);
 	So(nng_pipe_id(p) > 0);
@@ -144,18 +141,6 @@ check_props(nng_msg *msg)
 
 	So(nng_pipe_get_addr(p, NNG_OPT_REMADDR, &ra) == 0);
 	So(validloopback(&ra));
-
-	// Request header
-	buf = NULL;
-	So(nng_pipe_get_string(p, NNG_OPT_WS_REQUEST_HEADERS, &buf) == 0);
-	So(strstr(buf, "Sec-WebSocket-Key") != NULL);
-	nng_strfree(buf);
-
-	// Response header
-	buf = NULL;
-	So(nng_pipe_get_string(p, NNG_OPT_WS_RESPONSE_HEADERS, &buf) == 0);
-	So(strstr(buf, "Sec-WebSocket-Accept") != NULL);
-	nng_strfree(buf);
 
 	return (0);
 }

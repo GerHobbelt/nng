@@ -12,6 +12,10 @@
 
   - [Sockets](./api/sock.md)
 
+  - [Contexts](./api/ctx.md)
+
+  - [Pipes](./api/pipe.md)
+
   - [Memory](./api/memory.md)
 
   - [Time](./api/time.md)
@@ -32,11 +36,13 @@
 
   - [Streams](./api/stream.md)
 
+  - [HTTP](./api/http.md)
+
   - [Miscellaneous](./api/misc.md)
 
   - [ID Map](./api/id_map.md)
 
-  - [Command Options](./api/cmd_opts.md)
+  - [Arguments Parser](./api/args.md)
 
 - [Protocols](./proto/index.md)
 

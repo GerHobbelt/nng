@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 // Copyright 2019 Devolutions <info@devolutions.net>
 //
@@ -10,14 +10,14 @@
 //
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "core/nng_impl.h"
 
-#include <nng/supplemental/tls/tls.h>
-
 #include "http_api.h"
+#include "http_msg.h"
 
 static nni_mtx http_txn_lk = NNI_MTX_INITIALIZER;
 
@@ -26,6 +26,7 @@ struct nng_http_client {
 	nni_mtx            mtx;
 	bool               closed;
 	nni_aio            aio;
+	char               host[260];
 	nng_stream_dialer *dialer;
 };
 
@@ -43,7 +44,7 @@ http_dial_cb(void *arg)
 {
 	nni_http_client *c = arg;
 	nni_aio         *aio;
-	int              rv;
+	nng_err          rv;
 	nng_stream      *stream;
 	nni_http_conn   *conn;
 
@@ -60,7 +61,7 @@ http_dial_cb(void *arg)
 		return;
 	}
 
-	if (rv != 0) {
+	if (rv != NNG_OK) {
 		nni_aio_list_remove(aio);
 		http_dial_start(c);
 		nni_mtx_unlock(&c->mtx);
@@ -72,18 +73,20 @@ http_dial_cb(void *arg)
 	stream = nni_aio_get_output(&c->aio, 0);
 	NNI_ASSERT(stream != NULL);
 
-	rv = nni_http_conn_init(&conn, stream);
+	rv = nni_http_init(&conn, stream, true);
+
+	// set up the host header
 	http_dial_start(c);
 	nni_mtx_unlock(&c->mtx);
 
-	if (rv != 0) {
+	if (rv != NNG_OK) {
 		// the conn_init function will have already discard stream.
 		nni_aio_finish_error(aio, rv);
 		return;
 	}
-
+	nni_http_set_host(conn, c->host);
 	nni_aio_set_output(aio, 0, conn);
-	nni_aio_finish(aio, 0, 0);
+	nni_aio_finish(aio, NNG_OK, 0);
 }
 
 void
@@ -97,10 +100,10 @@ nni_http_client_fini(nni_http_client *c)
 	NNI_FREE_STRUCT(c);
 }
 
-int
+nng_err
 nni_http_client_init(nni_http_client **cp, const nng_url *url)
 {
-	int              rv;
+	nng_err          rv;
 	nni_http_client *c;
 	nng_url          my_url;
 	const char      *scheme;
@@ -112,7 +115,8 @@ nni_http_client_init(nni_http_client **cp, const nng_url *url)
 	memcpy(&my_url, url, sizeof(my_url));
 	my_url.u_scheme = (char *) scheme;
 
-	if (strlen(url->u_hostname) == 0) {
+	if ((strlen(url->u_hostname) == 0) ||
+	    (strlen(url->u_hostname) > 253)) {
 		// We require a valid hostname.
 		return (NNG_EADDRINVAL);
 	}
@@ -124,22 +128,32 @@ nni_http_client_init(nni_http_client **cp, const nng_url *url)
 	nni_aio_list_init(&c->aios);
 	nni_aio_init(&c->aio, http_dial_cb, c);
 
+	if (nni_url_default_port(url->u_scheme) == url->u_port) {
+		snprintf(c->host, sizeof(c->host), "%s", url->u_hostname);
+	} else if (strchr(url->u_hostname, ':') != NULL) {
+		// IPv6 address, needs [wrapping]
+		snprintf(c->host, sizeof(c->host), "[%s]:%d", url->u_hostname,
+		    url->u_port);
+	} else {
+		snprintf(c->host, sizeof(c->host), "%s:%d", url->u_hostname,
+		    url->u_port);
+	}
 	if ((rv = nng_stream_dialer_alloc_url(&c->dialer, &my_url)) != 0) {
 		nni_http_client_fini(c);
 		return (rv);
 	}
 
 	*cp = c;
-	return (0);
+	return (NNG_OK);
 }
 
-int
+nng_err
 nni_http_client_set_tls(nni_http_client *c, nng_tls_config *tls)
 {
 	return (nng_stream_dialer_set_tls(c->dialer, tls));
 }
 
-int
+nng_err
 nni_http_client_get_tls(nni_http_client *c, nng_tls_config **tlsp)
 {
 	return (nng_stream_dialer_get_tls(c->dialer, tlsp));
@@ -192,7 +206,6 @@ nni_http_client_connect(nni_http_client *c, nni_aio *aio)
 }
 
 typedef enum http_txn_state {
-	HTTP_CONNECTING,
 	HTTP_SENDING,
 	HTTP_RECVING,
 	HTTP_RECVING_BODY,
@@ -200,20 +213,22 @@ typedef enum http_txn_state {
 } http_txn_state;
 
 typedef struct http_txn {
-	nni_aio         *aio;  // lower level aio
+	nni_aio          aio;  // lower level aio
 	nni_list         aios; // upper level aio(s) -- maximum one
 	nni_http_client *client;
 	nni_http_conn   *conn;
-	nni_http_req    *req;
 	nni_http_res    *res;
 	nni_http_chunks *chunks;
 	http_txn_state   state;
+	nni_reap_node    reap;
 } http_txn;
 
 static void
-http_txn_fini(void *arg)
+http_txn_reap(void *arg)
 {
 	http_txn *txn = arg;
+
+	nni_aio_stop(&txn->aio);
 	if (txn->client != NULL) {
 		// We only close the connection if we created it.
 		if (txn->conn != NULL) {
@@ -222,8 +237,19 @@ http_txn_fini(void *arg)
 		}
 	}
 	nni_http_chunks_free(txn->chunks);
-	nni_aio_reap(txn->aio);
+	nni_aio_fini(&txn->aio);
 	NNI_FREE_STRUCT(txn);
+}
+
+static nni_reap_list http_txn_reaplist = {
+	.rl_offset = offsetof(http_txn, reap),
+	.rl_func   = (nni_cb) http_txn_reap,
+};
+
+static void
+http_txn_fini(http_txn *txn)
+{
+	nni_reap(&http_txn_reaplist, txn);
 }
 
 static void
@@ -242,7 +268,7 @@ http_txn_cb(void *arg)
 	http_txn       *txn = arg;
 	const char     *str;
 	char           *end;
-	int             rv;
+	nng_err         rv;
 	uint64_t        len;
 	nni_iov         iov;
 	char           *dst;
@@ -250,47 +276,42 @@ http_txn_cb(void *arg)
 	nni_http_chunk *chunk = NULL;
 
 	nni_mtx_lock(&http_txn_lk);
-	if ((rv = nni_aio_result(txn->aio)) != 0) {
+	if ((rv = nni_aio_result(&txn->aio)) != NNG_OK) {
 		http_txn_finish_aios(txn, rv);
 		nni_mtx_unlock(&http_txn_lk);
 		http_txn_fini(txn);
 		return;
 	}
 	switch (txn->state) {
-	case HTTP_CONNECTING:
-		txn->conn  = nni_aio_get_output(txn->aio, 0);
-		txn->state = HTTP_SENDING;
-		nni_http_write_req(txn->conn, txn->req, txn->aio);
-		nni_mtx_unlock(&http_txn_lk);
-		return;
-
 	case HTTP_SENDING:
 		txn->state = HTTP_RECVING;
-		nni_http_read_res(txn->conn, txn->res, txn->aio);
+		nni_http_read_res(txn->conn, &txn->aio);
 		nni_mtx_unlock(&http_txn_lk);
 		return;
 
 	case HTTP_RECVING:
 
-		// Detect chunked encoding.  You poor bastard.
-		if (((str = nni_http_res_get_header(
-		          txn->res, "Transfer-Encoding")) != NULL) &&
+		// Detect chunked encoding.  You poor bastard.  (Only if not
+		// HEAD.)
+		if ((strcmp(nni_http_get_method(txn->conn), "HEAD") != 0) &&
+		    ((str = nni_http_get_header(
+		          txn->conn, "Transfer-Encoding")) != NULL) &&
 		    (strstr(str, "chunked") != NULL)) {
 
 			if ((rv = nni_http_chunks_init(&txn->chunks, 0)) !=
-			    0) {
+			    NNG_OK) {
 				goto error;
 			}
 			txn->state = HTTP_RECVING_CHUNKS;
-			nni_http_read_chunks(txn->conn, txn->chunks, txn->aio);
+			nni_http_read_chunks(
+			    txn->conn, txn->chunks, &txn->aio);
 			nni_mtx_unlock(&http_txn_lk);
 			return;
 		}
 
-		str = nni_http_req_get_method(txn->req);
-		if ((nni_strcasecmp(str, "HEAD") == 0) ||
-		    ((str = nni_http_res_get_header(
-		          txn->res, "Content-Length")) == NULL) ||
+		if ((strcmp(nni_http_get_method(txn->conn), "HEAD") == 0) ||
+		    ((str = nni_http_get_header(
+		          txn->conn, "Content-Length")) == NULL) ||
 		    ((len = (uint64_t) strtoull(str, &end, 10)) == 0) ||
 		    (end == NULL) || (*end != '\0')) {
 			// If no content-length, or HEAD (which per RFC
@@ -302,13 +323,13 @@ http_txn_cb(void *arg)
 		}
 
 		if ((rv = nni_http_res_alloc_data(txn->res, (size_t) len)) !=
-		    0) {
+		    NNG_OK) {
 			goto error;
 		}
-		nni_http_res_get_data(txn->res, &iov.iov_buf, &iov.iov_len);
-		nni_aio_set_iov(txn->aio, 1, &iov);
+		nni_http_get_body(txn->conn, &iov.iov_buf, &iov.iov_len);
+		nni_aio_set_iov(&txn->aio, 1, &iov);
 		txn->state = HTTP_RECVING_BODY;
-		nni_http_read_full(txn->conn, txn->aio);
+		nni_http_read_full(txn->conn, &txn->aio);
 		nni_mtx_unlock(&http_txn_lk);
 		return;
 
@@ -326,7 +347,7 @@ http_txn_cb(void *arg)
 		if ((rv = nni_http_res_alloc_data(txn->res, sz)) != 0) {
 			goto error;
 		}
-		nni_http_res_get_data(txn->res, (void **) &dst, &sz);
+		nni_http_get_body(txn->conn, (void **) &dst, &sz);
 		while ((chunk = nni_http_chunks_iter(txn->chunks, chunk)) !=
 		    NULL) {
 			memcpy(dst, nni_http_chunk_data(chunk),
@@ -352,7 +373,7 @@ http_txn_cancel(nni_aio *aio, void *arg, int rv)
 	http_txn *txn = arg;
 	nni_mtx_lock(&http_txn_lk);
 	if (nni_aio_list_active(aio)) {
-		nni_aio_abort(txn->aio, rv);
+		nni_aio_abort(&txn->aio, rv);
 	}
 	nni_mtx_unlock(&http_txn_lk);
 }
@@ -363,75 +384,24 @@ http_txn_cancel(nni_aio *aio, void *arg, int rv)
 // for Chunked Transfer Encoding is missing.  Note that cancelling the aio
 // is generally fatal to the connection.
 void
-nni_http_transact_conn(
-    nni_http_conn *conn, nni_http_req *req, nni_http_res *res, nni_aio *aio)
+nni_http_transact_conn(nni_http_conn *conn, nni_aio *aio)
 {
 	http_txn *txn;
-	int       rv;
 
 	nni_aio_reset(aio);
 	if ((txn = NNI_ALLOC_STRUCT(txn)) == NULL) {
 		nni_aio_finish_error(aio, NNG_ENOMEM);
 		return;
 	}
-	if ((rv = nni_aio_alloc(&txn->aio, http_txn_cb, txn)) != 0) {
-		NNI_FREE_STRUCT(txn);
-		nni_aio_finish_error(aio, rv);
-		return;
-	}
+	nni_aio_init(&txn->aio, http_txn_cb, txn);
 	nni_aio_list_init(&txn->aios);
 	txn->client = NULL;
 	txn->conn   = conn;
-	txn->req    = req;
-	txn->res    = res;
+	txn->res    = nni_http_conn_res(conn);
 	txn->state  = HTTP_SENDING;
 
-	nni_mtx_lock(&http_txn_lk);
-	if (!nni_aio_start(aio, http_txn_cancel, txn)) {
-		nni_mtx_unlock(&http_txn_lk);
-		http_txn_fini(txn);
-		return;
-	}
 	nni_http_res_reset(txn->res);
-	nni_list_append(&txn->aios, aio);
-	nni_http_write_req(conn, req, txn->aio);
-	nni_mtx_unlock(&http_txn_lk);
-}
-
-// nni_http_transact_simple does a single transaction, creating a connection
-// just for the purpose, and closing it when done.  (No connection caching.)
-// The reason we require a client to be created first is to deal with TLS
-// settings.  A single global client (per server) may be used.
-void
-nni_http_transact(nni_http_client *client, nni_http_req *req,
-    nni_http_res *res, nni_aio *aio)
-{
-	http_txn *txn;
-	int       rv;
-
-	nni_aio_reset(aio);
-	if ((txn = NNI_ALLOC_STRUCT(txn)) == NULL) {
-		nni_aio_finish_error(aio, NNG_ENOMEM);
-		return;
-	}
-	if ((rv = nni_aio_alloc(&txn->aio, http_txn_cb, txn)) != 0) {
-		NNI_FREE_STRUCT(txn);
-		nni_aio_finish_error(aio, rv);
-		return;
-	}
-
-	if ((rv = nni_http_req_set_header(req, "Connection", "close")) != 0) {
-		nni_aio_finish_error(aio, rv);
-		http_txn_fini(txn);
-		return;
-	}
-
-	nni_aio_list_init(&txn->aios);
-	txn->client = client;
-	txn->conn   = NULL;
-	txn->req    = req;
-	txn->res    = res;
-	txn->state  = HTTP_CONNECTING;
+	nni_http_set_status(txn->conn, 0, NULL);
 
 	nni_mtx_lock(&http_txn_lk);
 	if (!nni_aio_start(aio, http_txn_cancel, txn)) {
@@ -439,8 +409,7 @@ nni_http_transact(nni_http_client *client, nni_http_req *req,
 		http_txn_fini(txn);
 		return;
 	}
-	nni_http_res_reset(txn->res);
 	nni_list_append(&txn->aios, aio);
-	nni_http_client_connect(client, txn->aio);
+	nni_http_write_req(conn, &txn->aio);
 	nni_mtx_unlock(&http_txn_lk);
 }

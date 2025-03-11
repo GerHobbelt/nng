@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 //
 // This software is supplied under the terms of the MIT License, a
 // copy of which should be located in the distribution where this
@@ -8,7 +8,6 @@
 //
 
 #include "nng/nng.h"
-#include "nng/protocol/pubsub0/sub.h"
 #include <nuts.h>
 
 static void
@@ -140,7 +139,7 @@ test_sub_recv_late(void)
 	NUTS_MARRY(pub, sub);
 	NUTS_TRUE(nuts_poll_fd(fd) == false);
 
-	nng_recv_aio(sub, aio);
+	nng_socket_recv(sub, aio);
 
 	// But once we send messages, it is.
 	// We have to send a request, in order to send a reply.
@@ -302,10 +301,10 @@ test_sub_ctx_recv_abort(void)
 
 	nng_aio_set_timeout(aio, 1000);
 	nng_ctx_recv(ctx, aio);
-	nng_aio_abort(aio, NNG_EAMBIGUOUS);
+	nng_aio_abort(aio, NNG_EINTERNAL);
 
 	nng_aio_wait(aio);
-	NUTS_FAIL(nng_aio_result(aio), NNG_EAMBIGUOUS);
+	NUTS_FAIL(nng_aio_result(aio), NNG_EINTERNAL);
 	NUTS_CLOSE(sub);
 	nng_aio_free(aio);
 }

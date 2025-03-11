@@ -109,6 +109,62 @@ typedef int32_t nng_duration; // in milliseconds
 // past, measured in milliseconds.  The values are always positive.
 typedef uint64_t nng_time;
 
+// Error codes.  These generally have different values from UNIX errnos,
+// so take care about converting them.  The one exception is that 0 is
+// unambiguously "success".
+//
+// NNG_SYSERR is a special code, which allows us to wrap errors from the
+// underlying operating system.  We generally prefer to map errors to one
+// of the above, but if we cannot, then we just encode an error this way.
+// The bit is large enough to accommodate all known UNIX and Win32 error
+// codes.  We try hard to match things semantically to one of our standard
+// errors.  For example, a connection reset or aborted we treat as a
+// closed connection, because that's basically what it means.  (The remote
+// peer closed the connection.)  For certain kinds of resource exhaustion
+// we treat it the same as memory.  But for files, etc. that's OS-specific,
+// and we use the generic below.  Some of the above error codes we use
+// internally, and the application should never see (e.g. NNG_EINTR).
+//
+// NNG_ETRANERR is like ESYSERR, but is used to wrap transport specific
+// errors, from different transports.  It should only be used when none
+// of the other options are available.
+typedef enum {
+	NNG_OK           = 0, // not an error!
+	NNG_EINTR        = 1,
+	NNG_ENOMEM       = 2,
+	NNG_EINVAL       = 3,
+	NNG_EBUSY        = 4,
+	NNG_ETIMEDOUT    = 5,
+	NNG_ECONNREFUSED = 6,
+	NNG_ECLOSED      = 7,
+	NNG_EAGAIN       = 8,
+	NNG_ENOTSUP      = 9,
+	NNG_EADDRINUSE   = 10,
+	NNG_ESTATE       = 11,
+	NNG_ENOENT       = 12,
+	NNG_EPROTO       = 13,
+	NNG_EUNREACHABLE = 14,
+	NNG_EADDRINVAL   = 15,
+	NNG_EPERM        = 16,
+	NNG_EMSGSIZE     = 17,
+	NNG_ECONNABORTED = 18,
+	NNG_ECONNRESET   = 19,
+	NNG_ECANCELED    = 20,
+	NNG_ENOFILES     = 21,
+	NNG_ENOSPC       = 22,
+	NNG_EEXIST       = 23,
+	NNG_EREADONLY    = 24,
+	NNG_EWRITEONLY   = 25,
+	NNG_ECRYPTO      = 26,
+	NNG_EPEERAUTH    = 27,
+	NNG_EBADTYPE     = 30,
+	NNG_ECONNSHUT    = 31,
+	NNG_ESTOPPED     = 999,
+	NNG_EINTERNAL    = 1000,
+	NNG_ESYSERR      = 0x10000000,
+	NNG_ETRANERR     = 0x20000000
+} nng_err;
+
 typedef struct nng_msg  nng_msg;
 typedef struct nng_stat nng_stat;
 typedef struct nng_aio  nng_aio;
@@ -220,13 +276,11 @@ NNG_DECL int nng_socket_id(nng_socket);
 NNG_DECL int nng_socket_set_bool(nng_socket, const char *, bool);
 NNG_DECL int nng_socket_set_int(nng_socket, const char *, int);
 NNG_DECL int nng_socket_set_size(nng_socket, const char *, size_t);
-NNG_DECL int nng_socket_set_uint64(nng_socket, const char *, uint64_t);
 NNG_DECL int nng_socket_set_ms(nng_socket, const char *, nng_duration);
 
 NNG_DECL int nng_socket_get_bool(nng_socket, const char *, bool *);
 NNG_DECL int nng_socket_get_int(nng_socket, const char *, int *);
 NNG_DECL int nng_socket_get_size(nng_socket, const char *, size_t *);
-NNG_DECL int nng_socket_get_uint64(nng_socket, const char *, uint64_t *);
 NNG_DECL int nng_socket_get_ms(nng_socket, const char *, nng_duration *);
 
 // These functions are used to obtain a file descriptor that will poll
@@ -283,7 +337,7 @@ typedef void (*nng_pipe_cb)(nng_pipe, nng_pipe_ev, void *);
 // nng_pipe_notify registers a callback to be executed when the
 // given event is triggered.  To watch for different events, register
 // multiple times.  Each event can have at most one callback registered.
-NNG_DECL int nng_pipe_notify(nng_socket, nng_pipe_ev, nng_pipe_cb, void *);
+NNG_DECL nng_err nng_pipe_notify(nng_socket, nng_pipe_ev, nng_pipe_cb, void *);
 
 // nng_listen creates a listening endpoint with no special options,
 // and starts it listening.  It is functionally equivalent to the legacy
@@ -381,25 +435,18 @@ NNG_DECL int nng_listener_get_tls(nng_listener, nng_tls_config **);
 
 // nng_strerror returns a human-readable string associated with the error
 // code supplied.
-NNG_DECL const char *nng_strerror(int);
+NNG_DECL const char *nng_strerror(nng_err);
 
 // nng_send sends (or arranges to send) the data on the socket.  Note that
 // this function may (will!) return before any receiver has actually
 // received the data.  The return value will be zero to indicate that the
 // socket has accepted the entire data for send, or an errno to indicate
-// failure.  The flags may include NNG_FLAG_NONBLOCK or NNG_FLAG_ALLOC.
-// If the flag includes NNG_FLAG_ALLOC, then the function will call
-// nng_free() on the supplied pointer & size on success. (If the call
-// fails then the memory is not freed.)
+// failure.  The flags may include NNG_FLAG_NONBLOCK.
 NNG_DECL int nng_send(nng_socket, void *, size_t, int);
 
 // nng_recv receives message data into the socket, up to the supplied size.
 // The actual size of the message data will be written to the value pointed
-// to by size.  The flags may include NNG_FLAG_NONBLOCK and NNG_FLAG_ALLOC.
-// If NNG_FLAG_ALLOC is supplied then the library will allocate memory for
-// the caller.  In that case the pointer to the allocated will be stored
-// instead of the data itself.  The caller is responsible for freeing the
-// associated memory with nng_free().
+// to by size.  The flags may include NNG_FLAG_NONBLOCK.
 NNG_DECL int nng_recv(nng_socket, void *, size_t *, int);
 
 // nng_sendmsg is like nng_send, but offers up a message structure, which
@@ -414,19 +461,19 @@ NNG_DECL int nng_sendmsg(nng_socket, nng_msg *, int);
 // can be passed off directly to nng_sendmsg.
 NNG_DECL int nng_recvmsg(nng_socket, nng_msg **, int);
 
-// nng_send_aio sends data on the socket asynchronously.  As with nng_send,
+// nng_socket_send sends data on the socket asynchronously.  As with nng_send,
 // the completion may be executed before the data has actually been delivered,
 // but only when it is accepted for delivery.  The supplied AIO must have
 // been initialized, and have an associated message.  The message will be
 // "owned" by the socket if the operation completes successfully.  Otherwise,
 // the caller is responsible for freeing it.
-NNG_DECL void nng_send_aio(nng_socket, nng_aio *);
+NNG_DECL void nng_socket_send(nng_socket, nng_aio *);
 
-// nng_recv_aio receives data on the socket asynchronously.  On a successful
+// nng_socket_recv receives data on the socket asynchronously.  On a successful
 // result, the AIO will have an associated message, that can be obtained
 // with nng_aio_get_msg().  The caller takes ownership of the message at
 // this point.
-NNG_DECL void nng_recv_aio(nng_socket, nng_aio *);
+NNG_DECL void nng_socket_recv(nng_socket, nng_aio *);
 
 // Context support.  User contexts are not supported by all protocols,
 // but for those that do, they give a way to create multiple contexts
@@ -451,7 +498,7 @@ NNG_DECL int nng_ctx_close(nng_ctx);
 // A valid context is not necessarily an *open* context.
 NNG_DECL int nng_ctx_id(nng_ctx);
 
-// nng_ctx_recv receives asynchronously.  It works like nng_recv_aio, but
+// nng_ctx_recv receives asynchronously.  It works like nng_socket_recv, but
 // uses a local context instead of the socket global context.
 NNG_DECL void nng_ctx_recv(nng_ctx, nng_aio *);
 
@@ -460,7 +507,7 @@ NNG_DECL void nng_ctx_recv(nng_ctx, nng_aio *);
 // on a context instead of a socket.
 NNG_DECL int nng_ctx_recvmsg(nng_ctx, nng_msg **, int);
 
-// nng_ctx_send sends asynchronously. It works like nng_send_aio, but
+// nng_ctx_send sends asynchronously. It works like nng_socket_send, but
 // uses a local context instead of the socket global context.
 NNG_DECL void nng_ctx_send(nng_ctx, nng_aio *);
 
@@ -472,14 +519,12 @@ NNG_DECL int nng_ctx_sendmsg(nng_ctx, nng_msg *, int);
 NNG_DECL int nng_ctx_get_bool(nng_ctx, const char *, bool *);
 NNG_DECL int nng_ctx_get_int(nng_ctx, const char *, int *);
 NNG_DECL int nng_ctx_get_size(nng_ctx, const char *, size_t *);
-NNG_DECL int nng_ctx_get_uint64(nng_ctx, const char *, uint64_t *);
 NNG_DECL int nng_ctx_get_ms(nng_ctx, const char *, nng_duration *);
 
 NNG_DECL int nng_ctx_set(nng_ctx, const char *, const void *, size_t);
 NNG_DECL int nng_ctx_set_bool(nng_ctx, const char *, bool);
 NNG_DECL int nng_ctx_set_int(nng_ctx, const char *, int);
 NNG_DECL int nng_ctx_set_size(nng_ctx, const char *, size_t);
-NNG_DECL int nng_ctx_set_uint64(nng_ctx, const char *, uint64_t);
 NNG_DECL int nng_ctx_set_ms(nng_ctx, const char *, nng_duration);
 
 // nng_alloc is used to allocate memory.  It's intended purpose is for
@@ -488,10 +533,9 @@ NNG_DECL int nng_ctx_set_ms(nng_ctx, const char *, nng_duration);
 // specific API.
 NNG_DECL void *nng_alloc(size_t);
 
-// nng_free is used to free memory allocated with nng_alloc, which includes
-// memory allocated by nng_recv() when the NNG_FLAG_ALLOC message is supplied.
-// As the application is required to keep track of the size of memory, this
-// is probably less convenient for general uses than the C library malloc and
+// nng_free is used to free memory allocated with nng_alloc.  As the
+// application is required to keep track of the size of memory, this is
+// probably less convenient for general uses than the C library malloc and
 // calloc.
 NNG_DECL void nng_free(void *, size_t);
 
@@ -519,7 +563,7 @@ NNG_DECL void nng_strfree(char *);
 // when a submitted operation completes (or is canceled or fails) the
 // callback will be executed, generally in a different thread, with no
 // locks held.
-NNG_DECL int nng_aio_alloc(nng_aio **, void (*)(void *), void *);
+NNG_DECL nng_err nng_aio_alloc(nng_aio **, void (*)(void *), void *);
 
 // nng_aio_free frees the AIO and any associated resources.
 // It *must not* be in use at the time it is freed.
@@ -543,7 +587,7 @@ NNG_DECL void nng_aio_stop(nng_aio *);
 // nng_aio_result returns the status/result of the operation. This
 // will be zero on successful completion, or an nng error code on
 // failure.
-NNG_DECL int nng_aio_result(nng_aio *);
+NNG_DECL nng_err nng_aio_result(nng_aio *);
 
 // nng_aio_count returns the number of bytes transferred for certain
 // I/O operations.  This is meaningless for other operations (e.g.
@@ -558,7 +602,7 @@ NNG_DECL void nng_aio_cancel(nng_aio *);
 
 // nng_aio_abort is like nng_aio_cancel, but allows for a different
 // error result to be returned.
-NNG_DECL void nng_aio_abort(nng_aio *, int);
+NNG_DECL void nng_aio_abort(nng_aio *, nng_err);
 
 // nng_aio_wait waits synchronously for any pending operation to complete.
 // It also waits for the callback to have completed execution.  Therefore,
@@ -696,22 +740,20 @@ NNG_DECL nng_pipe nng_msg_get_pipe(const nng_msg *);
 // we do permit an application to close a pipe. This can be useful, for
 // example during a connection notification, to disconnect a pipe that
 // is associated with an invalid or untrusted remote peer.
-NNG_DECL int nng_pipe_get_bool(nng_pipe, const char *, bool *);
-NNG_DECL int nng_pipe_get_int(nng_pipe, const char *, int *);
-NNG_DECL int nng_pipe_get_ms(nng_pipe, const char *, nng_duration *);
-NNG_DECL int nng_pipe_get_size(nng_pipe, const char *, size_t *);
-NNG_DECL int nng_pipe_get_uint64(nng_pipe, const char *, uint64_t *);
-NNG_DECL int nng_pipe_get_string(nng_pipe, const char *, char **);
-NNG_DECL int nng_pipe_get_addr(nng_pipe, const char *, nng_sockaddr *);
+NNG_DECL nng_err nng_pipe_get_bool(nng_pipe, const char *, bool *);
+NNG_DECL nng_err nng_pipe_get_int(nng_pipe, const char *, int *);
+NNG_DECL nng_err nng_pipe_get_ms(nng_pipe, const char *, nng_duration *);
+NNG_DECL nng_err nng_pipe_get_size(nng_pipe, const char *, size_t *);
+NNG_DECL nng_err nng_pipe_get_string(nng_pipe, const char *, char **);
+NNG_DECL nng_err nng_pipe_get_addr(nng_pipe, const char *, nng_sockaddr *);
 
-NNG_DECL int          nng_pipe_close(nng_pipe);
+NNG_DECL nng_err      nng_pipe_close(nng_pipe);
 NNG_DECL int          nng_pipe_id(nng_pipe);
 NNG_DECL nng_socket   nng_pipe_socket(nng_pipe);
 NNG_DECL nng_dialer   nng_pipe_dialer(nng_pipe);
 NNG_DECL nng_listener nng_pipe_listener(nng_pipe);
 
 // Flags.
-#define NNG_FLAG_ALLOC 1u    // Recv to allocate receive buffer
 #define NNG_FLAG_NONBLOCK 2u // Non-blocking operations
 
 // Options.
@@ -721,7 +763,6 @@ NNG_DECL nng_listener nng_pipe_listener(nng_pipe);
 #define NNG_OPT_SENDTIMEO "send-timeout"
 #define NNG_OPT_LOCADDR "local-address"
 #define NNG_OPT_REMADDR "remote-address"
-#define NNG_OPT_URL "url"
 #define NNG_OPT_MAXTTL "ttl-max"
 #define NNG_OPT_RECVMAXSZ "recv-size-max"
 #define NNG_OPT_RECONNMINT "reconnect-time-min"
@@ -824,23 +865,12 @@ NNG_DECL nng_listener nng_pipe_listener(nng_pipe);
 
 // WebSocket Options.
 
-// NNG_OPT_WS_REQUEST_HEADERS is a string containing the
-// request headers, formatted as CRLF terminated lines.
-#define NNG_OPT_WS_REQUEST_HEADERS "ws:request-headers"
-
-// NNG_OPT_WS_RESPONSE_HEADERS is a string containing the
-// response headers, formatted as CRLF terminated lines.
-#define NNG_OPT_WS_RESPONSE_HEADERS "ws:response-headers"
-
-// NNG_OPT_WS_REQUEST_HEADER is a prefix, for a dynamic
-// property name.  This allows direct access to any named header.
-// Concatenate this with the name of the property (case is not sensitive).
-// Only the first such header is returned.
-#define NNG_OPT_WS_RESPONSE_HEADER "ws:response-header:"
-
-// NNG_OPT_WS_RESPONSE_HEADER is like NNG_OPT_REQUEST_HEADER, but used for
-// accessing the request headers.
-#define NNG_OPT_WS_REQUEST_HEADER "ws:request-header:"
+// NNG_OPT_WS_HEADER is a prefix, for a dynamic property name.
+// This allows direct access to any named header to set a header on
+// a dialer or listener.  This property can be used to set headers
+// on outgoing dialer or listeners, and can be used to return the
+// headers from the peer on a pipe.
+#define NNG_OPT_WS_HEADER "ws:header:"
 
 // NNG_OPT_WS_REQUEST_URI is used to obtain the URI sent by the client.
 // This can be useful when a handler supports an entire directory tree.
@@ -1025,64 +1055,6 @@ NNG_DECL void nng_device_aio(nng_aio *, nng_socket, nng_socket);
 // they have enough special logic around them that it might be best not to
 // automate the promotion of them to other APIs.  This is an area open
 // for discussion.
-
-// Error codes.  These generally have different values from UNIX errnos,
-// so take care about converting them.  The one exception is that 0 is
-// unambiguously "success".
-//
-// NNG_SYSERR is a special code, which allows us to wrap errors from the
-// underlying operating system.  We generally prefer to map errors to one
-// of the above, but if we cannot, then we just encode an error this way.
-// The bit is large enough to accommodate all known UNIX and Win32 error
-// codes.  We try hard to match things semantically to one of our standard
-// errors.  For example, a connection reset or aborted we treat as a
-// closed connection, because that's basically what it means.  (The remote
-// peer closed the connection.)  For certain kinds of resource exhaustion
-// we treat it the same as memory.  But for files, etc. that's OS-specific,
-// and we use the generic below.  Some of the above error codes we use
-// internally, and the application should never see (e.g. NNG_EINTR).
-//
-// NNG_ETRANERR is like ESYSERR, but is used to wrap transport specific
-// errors, from different transports.  It should only be used when none
-// of the other options are available.
-
-enum nng_errno_enum {
-	NNG_EINTR        = 1,
-	NNG_ENOMEM       = 2,
-	NNG_EINVAL       = 3,
-	NNG_EBUSY        = 4,
-	NNG_ETIMEDOUT    = 5,
-	NNG_ECONNREFUSED = 6,
-	NNG_ECLOSED      = 7,
-	NNG_EAGAIN       = 8,
-	NNG_ENOTSUP      = 9,
-	NNG_EADDRINUSE   = 10,
-	NNG_ESTATE       = 11,
-	NNG_ENOENT       = 12,
-	NNG_EPROTO       = 13,
-	NNG_EUNREACHABLE = 14,
-	NNG_EADDRINVAL   = 15,
-	NNG_EPERM        = 16,
-	NNG_EMSGSIZE     = 17,
-	NNG_ECONNABORTED = 18,
-	NNG_ECONNRESET   = 19,
-	NNG_ECANCELED    = 20,
-	NNG_ENOFILES     = 21,
-	NNG_ENOSPC       = 22,
-	NNG_EEXIST       = 23,
-	NNG_EREADONLY    = 24,
-	NNG_EWRITEONLY   = 25,
-	NNG_ECRYPTO      = 26,
-	NNG_EPEERAUTH    = 27,
-	NNG_ENOARG       = 28,
-	NNG_EAMBIGUOUS   = 29,
-	NNG_EBADTYPE     = 30,
-	NNG_ECONNSHUT    = 31,
-	NNG_ESTOPPED     = 999,
-	NNG_EINTERNAL    = 1000,
-	NNG_ESYSERR      = 0x10000000,
-	NNG_ETRANERR     = 0x20000000
-};
 
 // nng_url_parse parses a URL string into a structured form.
 // Note that the u_port member will be filled out with a numeric
@@ -1320,7 +1292,7 @@ typedef struct {
 // only the first call can contain a non-NULL params.  If already
 // initialized with non-NULL params, will return NNG_EALREADY.
 // Applications should *not* call a matching nng_fini() in that case.
-NNG_DECL int nng_init(nng_init_params *parms);
+NNG_DECL nng_err nng_init(nng_init_params *parms);
 
 // nng_fini is used to terminate the library, freeing certain global resources.
 // Each call to nng_fini is paired to a call to nng_init.  The last such
@@ -1435,7 +1407,7 @@ NNG_DECL uint32_t nng_random(void);
 // by reliable, bidirectional, byte streams.  This will return NNG_ENOTSUP
 // if the platform lacks support for this.  The argument is a pointer
 // to an array of file descriptors (or HANDLES or similar).
-NNG_DECL int nng_socket_pair(int[2]);
+NNG_DECL nng_err nng_socket_pair(int[2]);
 
 // Multithreading and synchronization functions.
 
@@ -1608,6 +1580,31 @@ NNG_DECL int nng_tls_config_psk(
 NNG_DECL int nng_tls_config_version(
     nng_tls_config *, nng_tls_version, nng_tls_version);
 
+// nng_tls_engine_name returns the "name" of the TLS engine.  If no
+// TLS engine support is enabled, then "none" is returned.
+NNG_DECL const char *nng_tls_engine_name(void);
+
+// nng_tls_engine_description returns the "description" of the TLS engine.
+// If no TLS engine support is enabled, then an empty string is returned.
+NNG_DECL const char *nng_tls_engine_description(void);
+
+// nng_tls_engine_fips_mode returns true if the engine is in FIPS 140 mode.
+NNG_DECL bool nng_tls_engine_fips_mode(void);
+
+// Public ID map support.
+typedef struct nng_id_map_s nng_id_map;
+
+#define NNG_MAP_RANDOM 1
+
+NNG_DECL int nng_id_map_alloc(
+    nng_id_map **map, uint64_t lo, uint64_t hi, int flags);
+NNG_DECL void  nng_id_map_free(nng_id_map *map);
+NNG_DECL void *nng_id_get(nng_id_map *, uint64_t);
+NNG_DECL int   nng_id_set(nng_id_map *, uint64_t, void *);
+NNG_DECL int   nng_id_alloc(nng_id_map *, uint64_t *, void *);
+NNG_DECL int   nng_id_remove(nng_id_map *, uint64_t);
+NNG_DECL bool  nng_id_visit(nng_id_map *, uint64_t *, void **, uint32_t *);
+
 // Protocol specific values.  These were formerly located in protocol specific
 // headers, but we are bringing them here for ease of use.
 
@@ -1668,6 +1665,8 @@ NNG_DECL int nng_surveyor0_open_raw(nng_socket *);
 	do {      \
 	} while (0)
 #define nng_close(s) nng_socket_close(s)
+#define nng_send_aio(s, a) nng_socket_send(s, a)
+#define nng_recv_aio(s, a) nng_socket_recv(s, a)
 #define nng_inproc_register() nng_nop()
 #define nng_ipc_register() nng_nop()
 #define nng_tls_register() nng_nop()

@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 //
 // This software is supplied under the terms of the MIT License, a
 // copy of which should be located in the distribution where this
@@ -13,7 +13,6 @@
 #include <string.h>
 
 #include "core/nng_impl.h"
-#include <nng/supplemental/tls/tls.h>
 
 #include "core/sockfd.h"
 #include "core/tcp.h"
@@ -368,12 +367,6 @@ nng_stream_get_size(nng_stream *s, const char *n, size_t *v)
 }
 
 int
-nng_stream_get_uint64(nng_stream *s, const char *n, uint64_t *v)
-{
-	return (nni_stream_get(s, n, v, NULL, NNI_TYPE_UINT64));
-}
-
-int
 nng_stream_get_string(nng_stream *s, const char *n, char **v)
 {
 	return (nni_stream_get(s, n, v, NULL, NNI_TYPE_STRING));
@@ -407,12 +400,6 @@ int
 nng_stream_dialer_get_size(nng_stream_dialer *d, const char *n, size_t *v)
 {
 	return (nni_stream_dialer_get(d, n, v, NULL, NNI_TYPE_SIZE));
-}
-
-int
-nng_stream_dialer_get_uint64(nng_stream_dialer *d, const char *n, uint64_t *v)
-{
-	return (nni_stream_dialer_get(d, n, v, NULL, NNI_TYPE_UINT64));
 }
 
 int
@@ -456,13 +443,6 @@ int
 nng_stream_listener_get_size(nng_stream_listener *l, const char *n, size_t *v)
 {
 	return (nni_stream_listener_get(l, n, v, NULL, NNI_TYPE_SIZE));
-}
-
-int
-nng_stream_listener_get_uint64(
-    nng_stream_listener *l, const char *n, uint64_t *v)
-{
-	return (nni_stream_listener_get(l, n, v, NULL, NNI_TYPE_UINT64));
 }
 
 int
@@ -510,12 +490,6 @@ nng_stream_dialer_set_size(nng_stream_dialer *d, const char *n, size_t v)
 }
 
 int
-nng_stream_dialer_set_uint64(nng_stream_dialer *d, const char *n, uint64_t v)
-{
-	return (nni_stream_dialer_set(d, n, &v, sizeof(v), NNI_TYPE_UINT64));
-}
-
-int
 nng_stream_dialer_set_ms(nng_stream_dialer *d, const char *n, nng_duration v)
 {
 	return (nni_stream_dialer_set(d, n, &v, sizeof(v), NNI_TYPE_DURATION));
@@ -558,13 +532,6 @@ int
 nng_stream_listener_set_size(nng_stream_listener *l, const char *n, size_t v)
 {
 	return (nni_stream_listener_set(l, n, &v, sizeof(v), NNI_TYPE_SIZE));
-}
-
-int
-nng_stream_listener_set_uint64(
-    nng_stream_listener *l, const char *n, uint64_t v)
-{
-	return (nni_stream_listener_set(l, n, &v, sizeof(v), NNI_TYPE_UINT64));
 }
 
 int
