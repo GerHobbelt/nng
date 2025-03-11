@@ -10,6 +10,7 @@
 // found online at https://opensource.org/licenses/MIT.
 //
 
+#include "nng/nng.h"
 #include <nuts.h>
 
 // TCP tests.
@@ -30,77 +31,35 @@ void
 test_tcp_wild_card_bind(void)
 {
 	nng_socket s1;
-	nng_socket s2;
-	char       addr[NNG_MAXADDRLEN];
-	uint16_t   port;
-
-	port = nuts_next_port();
 
 	NUTS_OPEN(s1);
-	NUTS_OPEN(s2);
-	(void) snprintf(addr, sizeof(addr), "tcp4://*:%u", port);
-	NUTS_PASS(nng_listen(s1, addr, NULL, 0));
-	(void) snprintf(addr, sizeof(addr), "tcp://127.0.0.1:%u", port);
-	NUTS_PASS(nng_dial(s2, addr, NULL, 0));
-	NUTS_CLOSE(s2);
-	NUTS_CLOSE(s1);
-}
-
-void
-test_tcp_local_address_connect(void)
-{
-
-	nng_socket s1;
-	nng_socket s2;
-	char       addr[NNG_MAXADDRLEN];
-	uint16_t   port;
-
-	NUTS_OPEN(s1);
-	NUTS_OPEN(s2);
-	port = nuts_next_port();
-	(void) snprintf(addr, sizeof(addr), "tcp://127.0.0.1:%u", port);
-	NUTS_PASS(nng_listen(s1, addr, NULL, 0));
-	(void) snprintf(
-	    addr, sizeof(addr), "tcp://127.0.0.1;127.0.0.1:%u", port);
-	NUTS_PASS(nng_dial(s2, addr, NULL, 0));
-	NUTS_CLOSE(s2);
+	NUTS_FAIL(nng_listen(s1, "tcp4://*:8080", NULL, 0), NNG_EADDRINVAL);
 	NUTS_CLOSE(s1);
 }
 
 void
 test_tcp_port_zero_bind(void)
 {
-	nng_socket   s1;
-	nng_socket   s2;
-	nng_sockaddr sa;
-	nng_listener l;
-	char        *addr;
+	nng_socket     s1;
+	nng_socket     s2;
+	nng_sockaddr   sa;
+	nng_listener   l;
+	const nng_url *u;
+	char           addr[NNG_MAXADDRSTRLEN];
 
 	NUTS_OPEN(s1);
 	NUTS_OPEN(s2);
 	NUTS_PASS(nng_listen(s1, "tcp://127.0.0.1:0", &l, 0));
-	NUTS_PASS(nng_listener_get_string(l, NNG_OPT_URL, &addr));
+	NUTS_PASS(nng_listener_get_url(l, &u));
+	NUTS_MATCH(nng_url_scheme(u), "tcp");
+	nng_url_sprintf(addr, sizeof(addr), u);
 	NUTS_TRUE(memcmp(addr, "tcp://", 6) == 0);
 	NUTS_PASS(nng_listener_get_addr(l, NNG_OPT_LOCADDR, &sa));
 	NUTS_TRUE(sa.s_in.sa_family == NNG_AF_INET);
 	NUTS_TRUE(sa.s_in.sa_port != 0);
 	NUTS_TRUE(sa.s_in.sa_addr = nuts_be32(0x7f000001));
 	NUTS_PASS(nng_dial(s2, addr, NULL, 0));
-	nng_strfree(addr);
 	NUTS_CLOSE(s2);
-	NUTS_CLOSE(s1);
-}
-
-void
-test_tcp_bad_local_interface(void)
-{
-	nng_socket s1;
-	int        rv;
-
-	NUTS_OPEN(s1);
-	rv = nng_dial(s1, "tcp://bogus1;127.0.0.1:80", NULL, 0),
-	NUTS_TRUE(rv != 0);
-	NUTS_TRUE(rv != NNG_ECONNREFUSED);
 	NUTS_CLOSE(s1);
 }
 
@@ -168,6 +127,42 @@ test_tcp_no_delay_option(void)
 	NUTS_CLOSE(s);
 }
 
+static bool
+has_v6(void)
+{
+	nng_sockaddr sa;
+	nng_udp     *u;
+	int          rv;
+
+	sa.s_in6.sa_family = NNG_AF_INET6;
+	sa.s_in6.sa_port   = 0;
+	memset(sa.s_in6.sa_addr, 0, 16);
+	sa.s_in6.sa_addr[15] = 1;
+
+	rv = nng_udp_open(&u, &sa);
+	if (rv == 0) {
+		nng_udp_close(u);
+	}
+	return (rv == 0 ? 1 : 0);
+}
+
+void
+test_tcp_ipv6(void)
+{
+	if (!has_v6()) {
+		NUTS_SKIP("No IPv6 support");
+		return;
+	}
+	nng_socket s;
+	NUTS_OPEN(s);
+	// this should have a [::1] bracket
+	NUTS_FAIL(nng_dial(s, "tcp://::1", NULL, 0), NNG_EINVAL);
+	NUTS_FAIL(nng_dial(s, "tcp://::1:5055", NULL, 0), NNG_EINVAL);
+	// this requires a port, but otherwise its ok, so address is invalid
+	NUTS_FAIL(nng_dial(s, "tcp://[::1]", NULL, 0), NNG_EADDRINVAL);
+	NUTS_CLOSE(s);
+}
+
 void
 test_tcp_keep_alive_option(void)
 {
@@ -177,10 +172,14 @@ test_tcp_keep_alive_option(void)
 	bool         v;
 	int          x;
 	char        *addr;
+	nng_url     *url;
 
 	NUTS_ADDR(addr, "tcp");
+	// next cases are just to exercise nng_dialer_create_url
+	NUTS_PASS(nng_url_parse(&url, addr));
 	NUTS_OPEN(s);
-	NUTS_PASS(nng_dialer_create(&d, s, addr));
+	NUTS_PASS(nng_dialer_create_url(&d, s, url));
+	nng_url_free(url);
 	NUTS_PASS(nng_dialer_get_bool(d, NNG_OPT_TCP_KEEPALIVE, &v));
 	NUTS_TRUE(v == false);
 	NUTS_PASS(nng_dialer_set_bool(d, NNG_OPT_TCP_KEEPALIVE, true));
@@ -244,12 +243,11 @@ NUTS_TESTS = {
 	{ "tcp wild card connect fail", test_tcp_wild_card_connect_fail },
 	{ "tcp wild card bind", test_tcp_wild_card_bind },
 	{ "tcp port zero bind", test_tcp_port_zero_bind },
-	{ "tcp local address connect", test_tcp_local_address_connect },
-	{ "tcp bad local interface", test_tcp_bad_local_interface },
 	{ "tcp non-local address", test_tcp_non_local_address },
 	{ "tcp malformed address", test_tcp_malformed_address },
 	{ "tcp no delay option", test_tcp_no_delay_option },
 	{ "tcp keep alive option", test_tcp_keep_alive_option },
 	{ "tcp recv max", test_tcp_recv_max },
+	{ "tcp ipv6", test_tcp_ipv6 },
 	{ NULL, NULL },
 };

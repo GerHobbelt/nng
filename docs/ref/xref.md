@@ -30,6 +30,7 @@
 [`nng_url`]: /api/url.md#url-structure
 [`nng_url_parse`]: /api/url.md#parse-a-url
 [`nng_url_free`]: /api/url.md#destroy-a-url
+[`nng_url_sprintf`]: /api/url.md#format-a-url
 [`nng_socket_pair`]: /api/misc.md#create-socket-pair
 [`nng_random`]: /api/misc.md#get-random-number
 [`nng_version`]: /api/misc.md#report-library-version
@@ -66,6 +67,28 @@
 [`nng_aio_result`]: /api/aio.md#result-of-operation
 [`nng_aio_count`]: /api/aio.md#result-of-operation
 [`nng_aio_set_timeout`]: /api/aio.md#set-timeout
+[`nng_socket_id`]: /api/sock.md#socket-identity
+[`nng_socket_raw`]: /api/sock.md#socket-identity
+[`nng_socket_proto_id`]: /api/sock.md#socket-identity
+[`nng_socket_proto_name`]: /api/sock.md#socket-identity
+[`nng_socket_peer_id`]: /api/sock.md#socket-identity
+[`nng_socket_peer_name`]: /api/sock.md#socket-identity
+[`nng_socket_get_recv_poll_fd`]: /api/sock.md#polling-socket-events
+[`nng_socket_get_send_poll_fd`]: /api/sock.md#polling-socket-events
+[`nng_init`]: /api/init.md#initialization
+[`nng_fini`]: /api/init.md#finalization
+[`nng_sub0_ctx_subscribe`]: /TODO.md
+[`nng_sub0_ctx_unsubscribe`]: /TODO.md
+[`nng_sub0_socket_subscribe`]: /TODO.md
+[`nng_sub0_socket_unsubscribe`]: /TODO.md
+[`nng_dialer_set_tls`]: /TODO.md
+[`nng_dialer_get_tls`]: /TODO.md
+[`nng_listener_set_tls`]: /TODO.md
+[`nng_listener_get_tls`]: /TODO.md
+[`nng_stream_dialer_set_tls`]: /TODO.md
+[`nng_stream_dialer_get_tls`]: /TODO.md
+[`nng_stream_listener_set_tls`]: /TODO.md
+[`nng_stream_listener_get_tls`]: /TODO.md
 [`nng_opts_parse`]: /api/cmd_opts.md#parse-command-line-options
 [`nng_aio_begin`]: /TODO.md
 [`nng_aio_defer`]: /TODO.md
@@ -73,6 +96,10 @@
 [`nng_aio_set_output`]: /TODO.md
 [`nng_send`]: /TODO.md
 [`nng_recv`]: /TODO.md
+[`nng_listener_get_url`]: /TODO.md
+[`nng_dialer_get_url`]: /TODO.md
+[`nng_tls_config`]: /TODO.md
+[`nng_tls_config_own_cert`]: /TODO.md
 
 <!-- Macros -->
 
@@ -83,6 +110,7 @@
 [`NNG_ETIMEDOUT`]: /api/errors.md#NNG_ETIMEDOUT
 [`NNG_ECONNREFUSED`]: /api/errors.md#NNG_ECONNREFUSED
 [`NNG_ECLOSED`]: /api/errors.md#NNG_ECLOSED
+[`NNG_EPROTO`]: /api/errors.md#NNG_EPROTO
 [`NNG_EAGAIN`]: /api/errors.md#NNG_EAGAIN
 [`NNG_ENOTSUP`]: /api/errors.md#NNG_ENOTSUP
 [`NNG_EADDRINUSE`]: /api/errors.md#NNG_EADDRINUSE
@@ -149,6 +177,7 @@
 [raw]: /TODO.md
 [pipe]: /TODO.md
 [socket]: /TODO.md
+[context]: /TODO.md
 [dialer]: /TODO.md
 [listener]: /TODO.md
 [message]: /api/msg.md

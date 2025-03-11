@@ -113,6 +113,9 @@ typedef struct nng_msg  nng_msg;
 typedef struct nng_stat nng_stat;
 typedef struct nng_aio  nng_aio;
 
+// URL structure.
+typedef struct nng_url nng_url;
+
 // For some transports, we need TLS configuration, including certificates
 // and so forth.  A TLS configuration cannot be changed once it is in use.
 typedef struct nng_tls_config nng_tls_config;
@@ -214,17 +217,6 @@ typedef struct nng_iov {
 #define NNG_DURATION_DEFAULT (-2)
 #define NNG_DURATION_ZERO (0)
 
-// nng_fini is used to terminate the library, freeing certain global resources.
-// This should only be called during atexit() or just before dlclose().
-// THIS FUNCTION MUST NOT BE CALLED CONCURRENTLY WITH ANY OTHER FUNCTION
-// IN THIS LIBRARY; IT IS NOT REENTRANT OR THREADSAFE.
-//
-// For most cases, this call is unnecessary, but it is provided to assist
-// when debugging with memory checkers (e.g. valgrind).  Calling this
-// function prevents global library resources from being reported incorrectly
-// as memory leaks.  In those cases, we recommend doing this with atexit().
-NNG_DECL void nng_fini(void);
-
 // nng_close closes the socket, terminating all activity and
 // closing any underlying connections and releasing any associated
 // resources.
@@ -242,7 +234,6 @@ NNG_DECL int nng_socket_set_string(nng_socket, const char *, const char *);
 NNG_DECL int nng_socket_set_ptr(nng_socket, const char *, void *);
 NNG_DECL int nng_socket_set_ms(nng_socket, const char *, nng_duration);
 
-NNG_DECL int nng_socket_get(nng_socket, const char *, void *, size_t *);
 NNG_DECL int nng_socket_get_bool(nng_socket, const char *, bool *);
 NNG_DECL int nng_socket_get_int(nng_socket, const char *, int *);
 NNG_DECL int nng_socket_get_size(nng_socket, const char *, size_t *);
@@ -282,6 +273,11 @@ NNG_DECL int nng_socket_raw(nng_socket id, bool *rawp);
 NNG_DECL const char *nng_str_sockaddr(
     const nng_sockaddr *sa, char *buf, size_t bufsz);
 
+// Obtain a port number (for NNG_AF_INET and NNG_AF_INET6this will be 16 bits
+// maximum, but other address familiies may have larger port numbers.)  For
+// address that don't have the concept of port numbers, zero will be returned.
+uint32_t nng_sockaddr_port(const nng_sockaddr *sa);
+
 // Arguably the pipe callback functions could be handled as an option,
 // but with the need to specify an argument, we find it best to unify
 // this as a separate function to pass in the argument and the callback.
@@ -306,6 +302,7 @@ NNG_DECL int nng_pipe_notify(nng_socket, nng_pipe_ev, nng_pipe_cb, void *);
 // nn_bind(). The underlying endpoint is returned back to the caller in the
 // endpoint pointer, if it is not NULL.  The flags are ignored at present.
 NNG_DECL int nng_listen(nng_socket, const char *, nng_listener *, int);
+NNG_DECL int nng_listen_url(nng_socket, const nng_url *, nng_listener *, int);
 
 // nng_dial creates a dialing endpoint, with no special options, and
 // starts it dialing.  Dialers have at most one active connection at a time
@@ -318,12 +315,16 @@ NNG_DECL int nng_listen(nng_socket, const char *, nng_listener *, int);
 // case, it will still be reconnected in the background -- only the initial
 // connection attempt is normally synchronous.)
 NNG_DECL int nng_dial(nng_socket, const char *, nng_dialer *, int);
+NNG_DECL int nng_dial_url(nng_socket, const nng_url *url, nng_dialer *, int);
 
 // nng_dialer_create creates a new dialer, that is not yet started.
 NNG_DECL int nng_dialer_create(nng_dialer *, nng_socket, const char *);
+NNG_DECL int nng_dialer_create_url(nng_dialer *, nng_socket, const nng_url *);
 
 // nng_listener_create creates a new listener, that is not yet started.
 NNG_DECL int nng_listener_create(nng_listener *, nng_socket, const char *);
+NNG_DECL int nng_listener_create_url(
+    nng_listener *, nng_socket, const nng_url *);
 
 // nng_dialer_start starts the endpoint dialing.  This is only possible if
 // the dialer is not already dialing.
@@ -358,6 +359,7 @@ NNG_DECL int nng_dialer_set_ptr(nng_dialer, const char *, void *);
 NNG_DECL int nng_dialer_set_ms(nng_dialer, const char *, nng_duration);
 NNG_DECL int nng_dialer_set_addr(
     nng_dialer, const char *, const nng_sockaddr *);
+NNG_DECL int nng_dialer_set_tls(nng_dialer, nng_tls_config *);
 
 NNG_DECL int nng_dialer_get_bool(nng_dialer, const char *, bool *);
 NNG_DECL int nng_dialer_get_int(nng_dialer, const char *, int *);
@@ -367,6 +369,8 @@ NNG_DECL int nng_dialer_get_string(nng_dialer, const char *, char **);
 NNG_DECL int nng_dialer_get_ptr(nng_dialer, const char *, void **);
 NNG_DECL int nng_dialer_get_ms(nng_dialer, const char *, nng_duration *);
 NNG_DECL int nng_dialer_get_addr(nng_dialer, const char *, nng_sockaddr *);
+NNG_DECL int nng_dialer_get_tls(nng_dialer, nng_tls_config **);
+NNG_DECL int nng_dialer_get_url(nng_dialer id, const nng_url **urlp);
 
 NNG_DECL int nng_listener_set_bool(nng_listener, const char *, bool);
 NNG_DECL int nng_listener_set_int(nng_listener, const char *, int);
@@ -377,6 +381,8 @@ NNG_DECL int nng_listener_set_ptr(nng_listener, const char *, void *);
 NNG_DECL int nng_listener_set_ms(nng_listener, const char *, nng_duration);
 NNG_DECL int nng_listener_set_addr(
     nng_listener, const char *, const nng_sockaddr *);
+NNG_DECL int nng_listener_set_tls(nng_listener, nng_tls_config *);
+NNG_DECL int nng_listener_get_url(nng_listener id, const nng_url **urlp);
 
 NNG_DECL int nng_listener_get_bool(nng_listener, const char *, bool *);
 NNG_DECL int nng_listener_get_int(nng_listener, const char *, int *);
@@ -386,6 +392,7 @@ NNG_DECL int nng_listener_get_string(nng_listener, const char *, char **);
 NNG_DECL int nng_listener_get_ptr(nng_listener, const char *, void **);
 NNG_DECL int nng_listener_get_ms(nng_listener, const char *, nng_duration *);
 NNG_DECL int nng_listener_get_addr(nng_listener, const char *, nng_sockaddr *);
+NNG_DECL int nng_listener_get_tls(nng_listener, nng_tls_config **);
 
 // nng_strerror returns a human-readable string associated with the error
 // code supplied.
@@ -721,7 +728,6 @@ NNG_DECL nng_listener nng_pipe_listener(nng_pipe);
 #define NNG_FLAG_NONBLOCK 2u // Non-blocking operations
 
 // Options.
-#define NNG_OPT_SOCKNAME "socket-name"
 #define NNG_OPT_RECVBUF "recv-buffer"
 #define NNG_OPT_SENDBUF "send-buffer"
 #define NNG_OPT_RECVTIMEO "recv-timeout"
@@ -735,15 +741,6 @@ NNG_DECL nng_listener nng_pipe_listener(nng_pipe);
 #define NNG_OPT_RECONNMAXT "reconnect-time-max"
 
 // TLS options are only used when the underlying transport supports TLS.
-
-// NNG_OPT_TLS_CONFIG is a pointer to a nng_tls_config object.  Generally
-// this can be used with endpoints, although once an endpoint is started, or
-// once a configuration is used, the value becomes read-only. Note that
-// when configuring the object, a hold is placed on the TLS configuration,
-// using a reference count.  When retrieving the object, no such hold is
-// placed, and so the caller must take care not to use the associated object
-// after the endpoint it is associated with is closed.
-#define NNG_OPT_TLS_CONFIG "tls-config"
 
 // NNG_OPT_TLS_VERIFIED returns a boolean indicating whether the peer has
 // been verified (true) or not (false). Typically, this is read-only, and
@@ -1097,22 +1094,6 @@ enum nng_errno_enum {
 	NNG_ETRANERR     = 0x20000000
 };
 
-// URL support.  We frequently want to process a URL, and these methods
-// give us a convenient way of doing so.
-
-typedef struct nng_url {
-	char *u_rawurl;   // never NULL
-	char *u_scheme;   // never NULL
-	char *u_userinfo; // will be NULL if not specified
-	char *u_host;     // including colon and port
-	char *u_hostname; // name only, will be "" if not specified
-	char *u_port;     // port, will be "" if not specified
-	char *u_path;     // path, will be "" if not specified
-	char *u_query;    // without '?', will be NULL if not specified
-	char *u_fragment; // without '#', will be NULL if not specified
-	char *u_requri;   // includes query and fragment, "" if not specified
-} nng_url;
-
 // nng_url_parse parses a URL string into a structured form.
 // Note that the u_port member will be filled out with a numeric
 // port if one isn't specified and a default port is appropriate for
@@ -1125,6 +1106,31 @@ NNG_DECL void nng_url_free(nng_url *);
 
 // nng_url_clone clones a URL structure.
 NNG_DECL int nng_url_clone(nng_url **, const nng_url *);
+
+// nng_url_sprintf prints a URL to a string using semantics similar to
+// snprintf.
+NNG_DECL int nng_url_sprintf(char *, size_t, const nng_url *);
+
+NNG_DECL const char *nng_url_scheme(const nng_url *);
+
+// Port (such as UDP or TCP) for a URL, can be zero for ports are not used by
+// the scheme.
+NNG_DECL uint32_t nng_url_port(const nng_url *);
+
+// hostname part of URL, can be NULL if irerelvant to scheme
+const char *nng_url_hostname(const nng_url *);
+
+// user info part (thing before '@') of URL, NULL if absent.
+const char *nng_url_userinfo(const nng_url *);
+
+// path portion of URL, will always non-NULL, but may be empty.
+const char *nng_url_path(const nng_url *);
+
+// query info part of URL, not including '?, NULL if absent'
+const char *nng_url_query(const nng_url *);
+
+// fragment part of URL, not including '#', NULL if absent.
+const char *nng_url_fragment(const nng_url *);
 
 // nng_version returns the library version as a human readable string.
 NNG_DECL const char *nng_version(void);
@@ -1189,6 +1195,13 @@ NNG_DECL int nng_stream_dialer_set_ptr(
 NNG_DECL int nng_stream_dialer_set_addr(
     nng_stream_dialer *, const char *, const nng_sockaddr *);
 
+// Note that when configuring the object, a hold is placed on the TLS
+// configuration, using a reference count.  When retrieving the object, no such
+// hold is placed, and so the caller must take care not to use the associated
+// object after the endpoint it is associated with is closed.
+NNG_DECL int nng_stream_dialer_get_tls(nng_stream_dialer *, nng_tls_config **);
+NNG_DECL int nng_stream_dialer_set_tls(nng_stream_dialer *, nng_tls_config *);
+
 NNG_DECL int nng_stream_listener_alloc(nng_stream_listener **, const char *);
 NNG_DECL int nng_stream_listener_alloc_url(
     nng_stream_listener **, const nng_url *);
@@ -1229,6 +1242,11 @@ NNG_DECL int nng_stream_listener_set_ptr(
 NNG_DECL int nng_stream_listener_set_addr(
     nng_stream_listener *, const char *, const nng_sockaddr *);
 
+NNG_DECL int nng_stream_listener_get_tls(
+    nng_stream_listener *, nng_tls_config **);
+NNG_DECL int nng_stream_listener_set_tls(
+    nng_stream_listener *, nng_tls_config *);
+
 // UDP operations.  These are provided for convenience,
 // and should be considered somewhat experimental.
 
@@ -1262,78 +1280,67 @@ NNG_DECL void nng_udp_recv(nng_udp *udp, nng_aio *aio);
 NNG_DECL int nng_udp_multicast_membership(
     nng_udp *udp, nng_sockaddr *sa, bool join);
 
-// nng_init_parameter is used by applications to change a tunable setting.
-// This function must be called before any other NNG function for the setting
-// to have any effect.  This function is also not thread-safe!
-//
-// The list of parameters supported is *not* documented, and subject to change.
-//
-// We try to provide sane defaults, so the use here is intended to provide
-// more control for applications that cannot use compile-time configuration.
-//
-// Applications should not depend on this API for correct operation.
-//
-// This API is intentionally undocumented.
-//
-// Parameter settings are lost after nng_fini() is called.
-typedef int   nng_init_parameter;
-NNG_DECL void nng_init_set_parameter(nng_init_parameter, uint64_t);
-
-// The following list of parameters is not part of our API stability promise.
-// In particular the set of parameters that are supported, the default values,
-// the range of valid values, and semantics associated therein are subject to
-// change at any time.  We won't go out of our way to break these, and we will
-// try to prevent changes here from breaking working applications, but this is
-// on a best effort basis only.
-//
-// NOTE: When removing a value, please leave the enumeration in place and add
-// a suffix _RETIRED ... this will preserve the binary values for binary
-// compatibility.
-enum {
-	NNG_INIT_PARAMETER_NONE = 0, // ensure values start at 1.
-
+// Initialization parameters.
+// Applications can tweak behavior by passing a non-empty set
+// values here, but only the first caller to nng_init may supply
+// values.
+typedef struct {
 	// Fix the number of threads used for tasks (callbacks),
-	// Default is 2 threads per core, capped to NNG_INIT_MAX_TASK_THREADS.
-	// At least 2 threads will be created in any case.
-	NNG_INIT_NUM_TASK_THREADS,
+	// Default is 2 threads per core, capped to max_task_threads below.
+	// At least 2 threads will be created in any case.  0 leaves this at
+	// the default.
+	int16_t num_task_threads;
+
+	// Limit the number of threads of created for tasks.
+	// NNG will always create at least 2 of these in order to prevent
+	// deadlocks. -1 means no limit.  Default is determined by
+	// NNG_MAX_TASKQ_THREADS compile time variable.
+	int16_t max_task_threads;
 
 	// Fix the number of threads used for expiration.  Default is one
-	// thread per core, capped to NNG_INIT_MAX_EXPIRE_THREADS.  At least
+	// thread per core, capped to max_expires_threads below.  At least
 	// one thread will be created.
-	NNG_INIT_NUM_EXPIRE_THREADS,
+	int16_t num_expire_threads;
+
+	// Limit the number of threads created for expiration.  -1 means no
+	// limit. Default is determined by the NNG_MAX_EXPIRE_THREADS compile
+	// time variable.
+	int16_t max_expire_threads;
 
 	// Fix the number of poller threads (used for I/O).  Support varies
 	// by platform (many platforms only support a single poller thread.)
-	NNG_INIT_NUM_POLLER_THREADS,
+	int16_t num_poller_threads;
+
+	// Limit the number of poller/IO threads created.  -1 means no limit.
+	// Default is determined by NNG_MAX_POLLER_THREADS compile time
+	// variable.
+	int16_t max_poller_threads;
 
 	// Fix the number of threads used for DNS resolution.  At least one
 	// will be used. Default is controlled by NNG_RESOLV_CONCURRENCY
 	// compile time variable.
-	NNG_INIT_NUM_RESOLVER_THREADS,
+	int16_t num_resolver_threads;
+} nng_init_params;
 
-	// Limit the number of threads of created for tasks.
-	// NNG will always create at least 2 of these in order to prevent
-	// deadlocks. Zero means no limit.  Default is determined by
-	// NNG_MAX_TASKQ_THREADS compile time variable.
-	NNG_INIT_MAX_TASK_THREADS,
+// Initialize the library.  May be called multiple times, but
+// only the first call can contain a non-NULL params.  If already
+// initialized with non-NULL params, will return NNG_EALREADY.
+// Applications should *not* call a matching nng_fini() in that case.
+NNG_DECL int nng_init(nng_init_params *parms);
 
-	// Limit the number of threads created for expiration.  Zero means no
-	// limit. Default is determined by the NNG_MAX_EXPIRE_THREADS compile
-	// time variable.
-	NNG_INIT_MAX_EXPIRE_THREADS,
-
-	// Limit the number of poller/IO threads created.  Zero means no limit.
-	// Default is determined by NNG_MAX_POLLER_THREADS compile time
-	// variable.
-	NNG_INIT_MAX_POLLER_THREADS,
-};
+// nng_fini is used to terminate the library, freeing certain global resources.
+// Each call to nng_fini is paired to a call to nng_init.  The last such
+// call will tear down any resources associated with the library.  Thus,
+// applications must not call other functions in the library after calling
+// this.
+NNG_DECL void nng_fini(void);
 
 // Logging support.
 
 // Log levels.  These correspond to RFC 5424 (syslog) levels.
 // NNG never only uses priorities 3 - 7.
 //
-// Note that LOG_EMER is 0, but we don't let applications submit'
+// Note that LOG_EMERG is 0, but we don't let applications submit'
 // such messages, so this is a useful value to prevent logging altogether.
 typedef enum nng_log_level {
 	NNG_LOG_NONE   = 0, // used for filters only, NNG suppresses these
@@ -1515,12 +1522,9 @@ typedef enum nng_tls_auth_mode {
 } nng_tls_auth_mode;
 
 // TLS version numbers.  We encode the major number and minor number
-// as separate byte fields.  No support for SSL 3.0 or earlier -- older
+// as separate byte fields.  No support for TLS 1.1 or earlier -- older
 // versions are known to be insecure and should not be used.
-// When possible applications should restrict themselves to TLS 1.2 or better.
 typedef enum nng_tls_version {
-	NNG_TLS_1_0 = 0x301,
-	NNG_TLS_1_1 = 0x302,
 	NNG_TLS_1_2 = 0x303,
 	NNG_TLS_1_3 = 0x304
 } nng_tls_version;

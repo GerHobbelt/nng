@@ -9,6 +9,7 @@
 // found online at https://opensource.org/licenses/MIT.
 //
 
+#include "core/defs.h"
 #include "core/nng_impl.h"
 #include "core/strs.h"
 #include "nng/nng.h"
@@ -42,7 +43,7 @@ nni_listener_destroy(nni_listener *l)
 	if (l->l_data != NULL) {
 		l->l_ops.l_fini(l->l_data);
 	}
-	nni_url_free(l->l_url);
+	nni_url_fini(&l->l_url);
 	NNI_FREE_STRUCT(l);
 }
 
@@ -72,12 +73,6 @@ listener_stats_init(nni_listener *l)
 		.si_name = "socket",
 		.si_desc = "socket id",
 		.si_type = NNG_STAT_ID,
-	};
-	static const nni_stat_info url_info = {
-		.si_name  = "url",
-		.si_desc  = "listener url",
-		.si_type  = NNG_STAT_STRING,
-		.si_alloc = true,
 	};
 	static const nni_stat_info pipes_info = {
 		.si_name   = "pipes",
@@ -144,7 +139,6 @@ listener_stats_init(nni_listener *l)
 
 	listener_stat_init(l, &l->st_id, &id_info);
 	listener_stat_init(l, &l->st_sock, &sock_info);
-	listener_stat_init(l, &l->st_url, &url_info);
 	listener_stat_init(l, &l->st_pipes, &pipes_info);
 	listener_stat_init(l, &l->st_accept, &accept_info);
 	listener_stat_init(l, &l->st_disconnect, &disconnect_info);
@@ -159,7 +153,6 @@ listener_stats_init(nni_listener *l)
 	nni_stat_set_id(&l->st_root, (int) l->l_id);
 	nni_stat_set_id(&l->st_id, (int) l->l_id);
 	nni_stat_set_id(&l->st_sock, (int) nni_sock_id(l->l_sock));
-	nni_stat_set_string(&l->st_url, l->l_url->u_rawurl);
 	nni_stat_register(&l->st_root);
 }
 #endif // NNG_ENABLE_STATS
@@ -199,33 +192,11 @@ nni_listener_bump_error(nni_listener *l, int err)
 #endif
 }
 
-// nni_listener_create creates a listener on the socket.
-// The caller should have a hold on the socket, and on success
-// the listener inherits the callers hold.  (If the caller wants
-// an additional hold, it should get an extra hold before calling this
-// function.)
-int
-nni_listener_create(nni_listener **lp, nni_sock *s, const char *url_str)
+static int
+nni_listener_init(nni_listener *l, nni_sock *s, nni_sp_tran *tran)
 {
-	nni_sp_tran  *tran;
-	nni_listener *l;
-	int           rv;
-	nni_url      *url;
+	int rv;
 
-	if ((rv = nni_url_parse(&url, url_str)) != 0) {
-		return (rv);
-	}
-	if (((tran = nni_sp_tran_find(url)) == NULL) ||
-	    (tran->tran_listener == NULL)) {
-		nni_url_free(url);
-		return (NNG_ENOTSUP);
-	}
-
-	if ((l = NNI_ALLOC_STRUCT(l)) == NULL) {
-		nni_url_free(url);
-		return (NNG_ENOMEM);
-	}
-	l->l_url    = url;
 	l->l_closed = false;
 	l->l_data   = NULL;
 	l->l_ref    = 1;
@@ -252,7 +223,8 @@ nni_listener_create(nni_listener **lp, nni_sock *s, const char *url_str)
 	listener_stats_init(l);
 #endif
 
-	if ((rv != 0) || ((rv = l->l_ops.l_init(&l->l_data, url, l)) != 0) ||
+	if ((rv != 0) ||
+	    ((rv = l->l_ops.l_init(&l->l_data, &l->l_url, l)) != 0) ||
 	    ((rv = nni_sock_add_listener(s, l)) != 0)) {
 		nni_mtx_lock(&listeners_lk);
 		nni_id_remove(&listeners, l->l_id);
@@ -260,6 +232,31 @@ nni_listener_create(nni_listener **lp, nni_sock *s, const char *url_str)
 #ifdef NNG_ENABLE_STATS
 		nni_stat_unregister(&l->st_root);
 #endif
+		return (rv);
+	}
+
+	return (0);
+}
+
+int
+nni_listener_create_url(nni_listener **lp, nni_sock *s, const nng_url *url)
+{
+	nni_sp_tran  *tran;
+	nni_listener *l;
+	int           rv;
+
+	if (((tran = nni_sp_tran_find(nng_url_scheme(url))) == NULL) ||
+	    (tran->tran_listener == NULL)) {
+		return (NNG_ENOTSUP);
+	}
+	if ((l = NNI_ALLOC_STRUCT(l)) == NULL) {
+		return (NNG_ENOMEM);
+	}
+	if ((rv = nni_url_clone_inline(&l->l_url, url)) != 0) {
+		NNI_FREE_STRUCT(l);
+		return (rv);
+	}
+	if ((rv = nni_listener_init(l, s, tran)) != 0) {
 		nni_listener_destroy(l);
 		return (rv);
 	}
@@ -268,15 +265,41 @@ nni_listener_create(nni_listener **lp, nni_sock *s, const char *url_str)
 	return (0);
 }
 
+// nni_listener_create creates a listener on the socket.
+// The caller should have a hold on the socket, and on success
+// the listener inherits the callers hold.  (If the caller wants
+// an additional hold, it should get an extra hold before calling this
+// function.)
+int
+nni_listener_create(nni_listener **lp, nni_sock *s, const char *url_str)
+{
+	nni_sp_tran  *tran;
+	nni_listener *l;
+	int           rv;
+
+	if (((tran = nni_sp_tran_find(url_str)) == NULL) ||
+	    (tran->tran_listener == NULL)) {
+		return (NNG_ENOTSUP);
+	}
+	if ((l = NNI_ALLOC_STRUCT(l)) == NULL) {
+		return (NNG_ENOMEM);
+	}
+	if ((rv = nni_url_parse_inline(&l->l_url, url_str)) != 0) {
+		NNI_FREE_STRUCT(l);
+		return (rv);
+	}
+	if ((rv = nni_listener_init(l, s, tran)) != 0) {
+		nni_listener_destroy(l);
+		return (rv);
+	}
+	*lp = l;
+	return (0);
+}
+
 int
 nni_listener_find(nni_listener **lp, uint32_t id)
 {
-	int           rv;
 	nni_listener *l;
-
-	if ((rv = nni_init()) != 0) {
-		return (rv);
-	}
 
 	nni_mtx_lock(&listeners_lk);
 	if ((l = nni_id_get(&listeners, id)) != NULL) {
@@ -366,9 +389,8 @@ listener_accept_cb(void *arg)
 	case NNG_ETIMEDOUT:    // No need to sleep, we timed out already.
 	case NNG_EPEERAUTH:    // peer validation failure
 		nng_log_warn("NNG-ACCEPT-FAIL",
-		    "Failed accepting for socket<%u> on %s: %s",
-		    nni_sock_id(l->l_sock), l->l_url->u_rawurl,
-		    nng_strerror(rv));
+		    "Failed accepting for socket<%u>: %s",
+		    nni_sock_id(l->l_sock), nng_strerror(rv));
 		nni_listener_bump_error(l, rv);
 		listener_accept_start(l);
 		break;
@@ -398,31 +420,27 @@ listener_accept_start(nni_listener *l)
 int
 nni_listener_start(nni_listener *l, int flags)
 {
-	int    rv;
-	char  *url;
-	size_t sz;
+	int            rv;
+	const nng_url *url;
+	char           us[NNG_MAXADDRSTRLEN];
 	NNI_ARG_UNUSED(flags);
 
 	if (nni_atomic_flag_test_and_set(&l->l_started)) {
 		return (NNG_ESTATE);
 	}
 
-	if ((rv = l->l_ops.l_bind(l->l_data)) != 0) {
-		nng_log_warn("NNG-BIND-FAIL",
-		    "Failed binding socket<%u> to %s: %s",
-		    nni_sock_id(l->l_sock), l->l_url->u_rawurl,
-		    nng_strerror(rv));
+	if ((rv = l->l_ops.l_bind(l->l_data, &l->l_url)) != 0) {
+		nng_log_warn("NNG-BIND-FAIL", "Failed binding socket<%u>: %s",
+		    nni_sock_id(l->l_sock), nng_strerror(rv));
 		nni_listener_bump_error(l, rv);
 		nni_atomic_flag_reset(&l->l_started);
 		return (rv);
 	}
 	// collect the URL which may have changed (e.g. binding to port 0)
-	sz = sizeof(url);
-	(void) (nni_listener_getopt(
-	    l, NNG_OPT_URL, &url, &sz, NNI_TYPE_STRING));
+	url = nni_listener_url(l);
+	nng_url_sprintf(us, sizeof(us), url);
 	nng_log_info("NNG-LISTEN", "Starting listener for socket<%u> on %s",
-	    nni_sock_id(l->l_sock), url);
-	nni_strfree(url);
+	    nni_sock_id(l->l_sock), us);
 
 	listener_accept_start(l);
 
@@ -448,10 +466,6 @@ nni_listener_setopt(
     nni_listener *l, const char *name, const void *val, size_t sz, nni_type t)
 {
 	nni_option *o;
-
-	if (strcmp(name, NNG_OPT_URL) == 0) {
-		return (NNG_EREADONLY);
-	}
 
 	if (l->l_ops.l_setopt != NULL) {
 		int rv = l->l_ops.l_setopt(l->l_data, name, val, sz, t);
@@ -497,14 +511,31 @@ nni_listener_getopt(
 		return (o->o_get(l->l_data, val, szp, t));
 	}
 
-	// We provide a fallback on the URL, but let the implementation
-	// override.  This allows the URL to be created with wildcards,
-	// that are resolved later.
-	if (strcmp(name, NNG_OPT_URL) == 0) {
-		return (nni_copyout_str(l->l_url->u_rawurl, val, szp, t));
-	}
-
 	return (nni_sock_getopt(l->l_sock, name, val, szp, t));
+}
+
+int
+nni_listener_get_tls(nni_listener *l, nng_tls_config **cfgp)
+{
+	if (l->l_ops.l_get_tls == NULL) {
+		return (NNG_ENOTSUP);
+	}
+	return (l->l_ops.l_get_tls(l->l_data, cfgp));
+}
+
+int
+nni_listener_set_tls(nni_listener *l, nng_tls_config *cfg)
+{
+	if (l->l_ops.l_set_tls == NULL) {
+		return (NNG_ENOTSUP);
+	}
+	return (l->l_ops.l_set_tls(l->l_data, cfg));
+}
+
+nng_url *
+nni_listener_url(nni_listener *l)
+{
+	return (&l->l_url);
 }
 
 void

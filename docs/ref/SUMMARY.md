@@ -6,7 +6,11 @@
 
 - [API Reference](./api/index.md)
 
+  - [Initialization](./api/init.md)
+
   - [Messages](./api/msg.md)
+
+  - [Sockets](./api/sock.md)
 
   - [Memory](./api/memory.md)
 

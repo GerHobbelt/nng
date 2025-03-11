@@ -55,7 +55,6 @@ struct tcptran_ep {
 	bool                 fini;
 	bool                 started;
 	bool                 closed;
-	nng_url             *url;
 	const char          *host;   // for dialers
 	int                  refcnt; // active pipes
 	nni_aio             *useraio;
@@ -724,65 +723,6 @@ tcptran_ep_close(void *arg)
 	nni_mtx_unlock(&ep->mtx);
 }
 
-// This parses off the optional source address that this transport uses.
-// The special handling of this URL format is quite honestly an historical
-// mistake, which we would remove if we could.
-static int
-tcptran_url_parse_source(nng_url *url, nng_sockaddr *sa, const nng_url *surl)
-{
-	int      af;
-	char    *semi;
-	char    *src;
-	size_t   len;
-	int      rv;
-	nni_aio *aio;
-
-	// We modify the URL.  This relies on the fact that the underlying
-	// transport does not free this, so we can just use references.
-
-	url->u_scheme   = surl->u_scheme;
-	url->u_port     = surl->u_port;
-	url->u_hostname = surl->u_hostname;
-
-	if ((semi = strchr(url->u_hostname, ';')) == NULL) {
-		memset(sa, 0, sizeof(*sa));
-		return (0);
-	}
-
-	len             = (size_t) (semi - url->u_hostname);
-	url->u_hostname = semi + 1;
-
-	if (strcmp(surl->u_scheme, "tcp") == 0) {
-		af = NNG_AF_UNSPEC;
-	} else if (strcmp(surl->u_scheme, "tcp4") == 0) {
-		af = NNG_AF_INET;
-#ifdef NNG_ENABLE_IPV6
-	} else if (strcmp(surl->u_scheme, "tcp6") == 0) {
-		af = NNG_AF_INET6;
-#endif
-	} else {
-		return (NNG_EADDRINVAL);
-	}
-
-	if ((src = nni_alloc(len + 1)) == NULL) {
-		return (NNG_ENOMEM);
-	}
-	memcpy(src, surl->u_hostname, len);
-	src[len] = '\0';
-
-	if ((rv = nni_aio_alloc(&aio, NULL, NULL)) != 0) {
-		nni_free(src, len + 1);
-		return (rv);
-	}
-
-	nni_resolv_ip(src, "0", af, true, sa, aio);
-	nni_aio_wait(aio);
-	rv = nni_aio_result(aio);
-	nni_aio_free(aio);
-	nni_free(src, len + 1);
-	return (rv);
-}
-
 static void
 tcptran_timer_cb(void *arg)
 {
@@ -893,6 +833,7 @@ static int
 tcptran_ep_init(tcptran_ep **epp, nng_url *url, nni_sock *sock)
 {
 	tcptran_ep *ep;
+	NNI_ARG_UNUSED(url);
 
 	if ((ep = NNI_ALLOC_STRUCT(ep)) == NULL) {
 		return (NNG_ENOMEM);
@@ -903,7 +844,6 @@ tcptran_ep_init(tcptran_ep **epp, nng_url *url, nni_sock *sock)
 	NNI_LIST_INIT(&ep->negopipes, tcptran_pipe, node);
 
 	ep->proto = nni_sock_proto_id(sock);
-	ep->url   = url;
 
 #ifdef NNG_ENABLE_STATS
 	static const nni_stat_info rcv_max_info = {
@@ -923,11 +863,9 @@ tcptran_ep_init(tcptran_ep **epp, nng_url *url, nni_sock *sock)
 static int
 tcptran_dialer_init(void **dp, nng_url *url, nni_dialer *ndialer)
 {
-	tcptran_ep  *ep;
-	int          rv;
-	nng_sockaddr srcsa;
-	nni_sock    *sock = nni_dialer_sock(ndialer);
-	nng_url      myurl;
+	tcptran_ep *ep;
+	int         rv;
+	nni_sock   *sock = nni_dialer_sock(ndialer);
 
 	// Check for invalid URL components.
 	if ((strlen(url->u_path) != 0) && (strcmp(url->u_path, "/") != 0)) {
@@ -935,12 +873,8 @@ tcptran_dialer_init(void **dp, nng_url *url, nni_dialer *ndialer)
 	}
 	if ((url->u_fragment != NULL) || (url->u_userinfo != NULL) ||
 	    (url->u_query != NULL) || (strlen(url->u_hostname) == 0) ||
-	    (strlen(url->u_port) == 0)) {
+	    (url->u_port == 0)) {
 		return (NNG_EADDRINVAL);
-	}
-
-	if ((rv = tcptran_url_parse_source(&myurl, &srcsa, url)) != 0) {
-		return (rv);
 	}
 
 	if ((rv = tcptran_ep_init(&ep, url, sock)) != 0) {
@@ -949,13 +883,7 @@ tcptran_dialer_init(void **dp, nng_url *url, nni_dialer *ndialer)
 
 	if ((rv != 0) ||
 	    ((rv = nni_aio_alloc(&ep->connaio, tcptran_dial_cb, ep)) != 0) ||
-	    ((rv = nng_stream_dialer_alloc_url(&ep->dialer, &myurl)) != 0)) {
-		tcptran_ep_fini(ep);
-		return (rv);
-	}
-	if ((srcsa.s_family != NNG_AF_UNSPEC) &&
-	    ((rv = nni_stream_dialer_set(ep->dialer, NNG_OPT_LOCADDR, &srcsa,
-	          sizeof(srcsa), NNI_TYPE_SOCKADDR)) != 0)) {
+	    ((rv = nng_stream_dialer_alloc_url(&ep->dialer, url)) != 0)) {
 		tcptran_ep_fini(ep);
 		return (rv);
 	}
@@ -1045,26 +973,6 @@ tcptran_ep_connect(void *arg, nni_aio *aio)
 }
 
 static int
-tcptran_ep_get_url(void *arg, void *v, size_t *szp, nni_opt_type t)
-{
-	tcptran_ep *ep = arg;
-	char       *s;
-	int         rv;
-	int         port = 0;
-
-	if (ep->listener != NULL) {
-		(void) nng_stream_listener_get_int(
-		    ep->listener, NNG_OPT_TCP_BOUND_PORT, &port);
-	}
-
-	if ((rv = nni_url_asprintf_port(&s, ep->url, port)) == 0) {
-		rv = nni_copyout_str(s, v, szp, t);
-		nni_strfree(s);
-	}
-	return (rv);
-}
-
-static int
 tcptran_ep_get_recvmaxsz(void *arg, void *v, size_t *szp, nni_opt_type t)
 {
 	tcptran_ep *ep = arg;
@@ -1094,13 +1002,19 @@ tcptran_ep_set_recvmaxsz(void *arg, const void *v, size_t sz, nni_opt_type t)
 }
 
 static int
-tcptran_ep_bind(void *arg)
+tcptran_ep_bind(void *arg, nng_url *url)
 {
 	tcptran_ep *ep = arg;
 	int         rv;
 
 	nni_mtx_lock(&ep->mtx);
 	rv = nng_stream_listener_listen(ep->listener);
+	if (rv == 0) {
+		int port;
+		nng_stream_listener_get_int(
+		    ep->listener, NNG_OPT_TCP_BOUND_PORT, &port);
+		url->u_port = (uint32_t) port;
+	}
 	nni_mtx_unlock(&ep->mtx);
 
 	return (rv);
@@ -1157,10 +1071,6 @@ static const nni_option tcptran_ep_opts[] = {
 	    .o_name = NNG_OPT_RECVMAXSZ,
 	    .o_get  = tcptran_ep_get_recvmaxsz,
 	    .o_set  = tcptran_ep_set_recvmaxsz,
-	},
-	{
-	    .o_name = NNG_OPT_URL,
-	    .o_get  = tcptran_ep_get_url,
 	},
 	// terminate list
 	{
@@ -1270,14 +1180,6 @@ static nni_sp_tran tcp6_tran = {
 	.tran_init     = tcptran_init,
 	.tran_fini     = tcptran_fini,
 };
-#endif
-
-#ifndef NNG_ELIDE_DEPRECATED
-int
-nng_tcp_register(void)
-{
-	return (nni_init());
-}
 #endif
 
 void

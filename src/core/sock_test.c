@@ -8,6 +8,7 @@
 // found online at https://opensource.org/licenses/MIT.
 //
 
+#include "nng/nng.h"
 #include <nuts.h>
 
 void
@@ -90,76 +91,6 @@ test_socket_base(void)
 	// Cannot set bogus options
 	NUTS_FAIL(nng_socket_set_bool(s1, "BAD_OPT", false), NNG_ENOTSUP);
 
-	NUTS_CLOSE(s1);
-}
-
-void
-test_socket_name(void)
-{
-	nng_socket s1;
-	char      *str;
-	long       id;
-	char      *end;
-	char      *name;
-
-	NUTS_OPEN(s1);
-	NUTS_PASS(nng_socket_get_string(s1, NNG_OPT_SOCKNAME, &name));
-	NUTS_TRUE(strlen(name) > 0);
-	NUTS_TRUE(strlen(name) < 64);
-	id = strtol(name, &end, 10);
-	NUTS_TRUE(id == (long) s1.id);
-	NUTS_TRUE(end != NULL && *end == '\0');
-	nng_strfree(name);
-
-	NUTS_PASS(nng_socket_set_string(s1, NNG_OPT_SOCKNAME, "hello"));
-	NUTS_PASS(nng_socket_get_string(s1, NNG_OPT_SOCKNAME, &name));
-	NUTS_MATCH(name, "hello");
-	nng_strfree(name);
-
-	char buf[128];
-	memset(buf, 'A', 128);
-	buf[127] = 0;
-
-	// strings must not be too long
-	NUTS_FAIL(
-	    nng_socket_set_string(s1, NNG_OPT_SOCKNAME, buf), NNG_EINVAL);
-	memset(buf, 'A', 64);
-	buf[64] = 0;
-	NUTS_FAIL(
-	    nng_socket_set_string(s1, NNG_OPT_SOCKNAME, buf), NNG_EINVAL);
-	buf[63] = 0;
-	NUTS_PASS(nng_socket_set_string(s1, NNG_OPT_SOCKNAME, buf));
-	NUTS_PASS(nng_socket_set_string(s1, NNG_OPT_SOCKNAME, "hello"));
-
-	NUTS_PASS(nng_socket_get_string(s1, NNG_OPT_SOCKNAME, &str));
-	NUTS_ASSERT(str != NULL);
-	NUTS_TRUE(strlen(str) == 5);
-	NUTS_MATCH(str, "hello");
-	nng_strfree(str);
-
-	NUTS_CLOSE(s1);
-}
-
-void
-test_socket_name_oversize(void)
-{
-	nng_socket s1;
-	char       buf[256]; // 64 is max
-	size_t     sz = sizeof(buf);
-	char      *name;
-
-	memset(buf, 'A', sz);
-	NUTS_OPEN(s1);
-
-	buf[sz - 1] = '\0';
-	NUTS_FAIL(
-	    nng_socket_set_string(s1, NNG_OPT_SOCKNAME, buf), NNG_EINVAL);
-
-	strcpy(buf, "hello");
-	NUTS_PASS(nng_socket_set_string(s1, NNG_OPT_SOCKNAME, buf));
-	NUTS_PASS(nng_socket_get_string(s1, NNG_OPT_SOCKNAME, &name));
-	NUTS_MATCH(name, "hello");
-	nng_strfree(name);
 	NUTS_CLOSE(s1);
 }
 
@@ -356,28 +287,34 @@ test_bad_url(void)
 }
 
 void
-test_url_option(void)
+test_endpoint_url(void)
 {
-	nng_socket   s1;
-	char        *url;
-	nng_listener l;
-	nng_dialer   d;
+	nng_socket     s1;
+	nng_listener   l;
+	nng_dialer     d;
+	const nng_url *url;
 
 	NUTS_OPEN(s1);
 
 	// Listener
 	NUTS_PASS(nng_listener_create(&l, s1, "inproc://url1"));
-	NUTS_PASS(nng_listener_get_string(l, NNG_OPT_URL, &url));
-	NUTS_MATCH(url, "inproc://url1");
-	NUTS_FAIL(nng_listener_set_string(l, NNG_OPT_URL, url), NNG_EREADONLY);
-	nng_strfree(url);
+	NUTS_PASS(nng_listener_get_url(l, &url));
+	NUTS_MATCH(nng_url_scheme(url), "inproc");
+	NUTS_MATCH(nng_url_path(url), "url1");
+	NUTS_NULL(nng_url_hostname(url));
+	NUTS_NULL(nng_url_query(url));
+	NUTS_NULL(nng_url_userinfo(url));
+	NUTS_NULL(nng_url_fragment(url));
 
 	// Dialer
 	NUTS_PASS(nng_dialer_create(&d, s1, "inproc://url2"));
-	NUTS_PASS(nng_dialer_get_string(d, NNG_OPT_URL, &url));
-	NUTS_MATCH(url, "inproc://url2");
-	NUTS_FAIL(nng_dialer_set_string(d, NNG_OPT_URL, url), NNG_EREADONLY);
-	nng_strfree(url);
+	NUTS_PASS(nng_dialer_get_url(d, &url));
+	NUTS_MATCH(nng_url_scheme(url), "inproc");
+	NUTS_MATCH(nng_url_path(url), "url2");
+	NUTS_NULL(nng_url_hostname(url));
+	NUTS_NULL(nng_url_query(url));
+	NUTS_NULL(nng_url_userinfo(url));
+	NUTS_NULL(nng_url_fragment(url));
 
 	NUTS_CLOSE(s1);
 }
@@ -402,16 +339,49 @@ test_listener_options(void)
 	    nng_listener_set_bool(l, NNG_OPT_RECVMAXSZ, true), NNG_EBADTYPE);
 
 	// Cannot set inappropriate options
-	NUTS_FAIL(
-	    nng_listener_set_string(l, NNG_OPT_SOCKNAME, "1"), NNG_ENOTSUP);
-
 	NUTS_FAIL(nng_listener_set_ms(l, NNG_OPT_RECONNMINT, 1), NNG_ENOTSUP);
-	NUTS_FAIL(nng_listener_set_string(l, NNG_OPT_SOCKNAME, "bogus"),
-	    NNG_ENOTSUP);
 
-	// Read only options
-	NUTS_FAIL(nng_listener_set_string(l, NNG_OPT_URL, "inproc://junk"),
-	    NNG_EREADONLY);
+	NUTS_CLOSE(s1);
+}
+
+void
+test_listener_create_url(void)
+{
+	nng_socket     s1;
+	nng_listener   l;
+	nng_url       *u;
+	const nng_url *u2;
+
+	NUTS_OPEN(s1);
+	NUTS_PASS(nng_url_parse(&u, "inproc://listener_opts2"));
+
+	NUTS_PASS(nng_listener_create_url(&l, s1, u));
+	nng_listener_get_url(l, &u2);
+
+	NUTS_MATCH(nng_url_scheme(u), nng_url_scheme(u2));
+	NUTS_MATCH(nng_url_path(u), nng_url_path(u2));
+	nng_url_free(u);
+
+	NUTS_CLOSE(s1);
+}
+
+void
+test_listen_url(void)
+{
+	nng_socket     s1;
+	nng_listener   l;
+	nng_url       *u;
+	const nng_url *u2;
+
+	NUTS_OPEN(s1);
+	NUTS_PASS(nng_url_parse(&u, "inproc://listen_url"));
+
+	NUTS_PASS(nng_listen_url(s1, u, &l, 0));
+	nng_listener_get_url(l, &u2);
+
+	NUTS_MATCH(nng_url_scheme(u), nng_url_scheme(u2));
+	NUTS_MATCH(nng_url_path(u), nng_url_path(u2));
+	nng_url_free(u);
 
 	NUTS_CLOSE(s1);
 }
@@ -436,15 +406,47 @@ test_dialer_options(void)
 	    nng_dialer_set_bool(d, NNG_OPT_RECVMAXSZ, true), NNG_EBADTYPE);
 
 	// Cannot set inappropriate options
-	NUTS_FAIL(
-	    nng_dialer_set_string(d, NNG_OPT_SOCKNAME, "1"), NNG_ENOTSUP);
 	NUTS_FAIL(nng_dialer_set_ms(d, NNG_OPT_SENDTIMEO, 1), NNG_ENOTSUP);
-	NUTS_FAIL(
-	    nng_dialer_set_string(d, NNG_OPT_SOCKNAME, "bogus"), NNG_ENOTSUP);
 
-	// Read only options
-	NUTS_FAIL(nng_dialer_set_string(d, NNG_OPT_URL, "inproc://junk"),
-	    NNG_EREADONLY);
+	NUTS_CLOSE(s1);
+}
+
+void
+test_dialer_create_url(void)
+{
+	nng_socket     s1;
+	nng_dialer     d;
+	nng_url       *u;
+	const nng_url *u2;
+
+	NUTS_OPEN(s1);
+
+	NUTS_PASS(nng_url_parse(&u, "inproc://dialer_create_url"));
+	NUTS_PASS(nng_dialer_create_url(&d, s1, u));
+	NUTS_PASS(nng_dialer_get_url(d, &u2));
+	NUTS_MATCH(nng_url_scheme(u), nng_url_scheme(u2));
+	NUTS_MATCH(nng_url_path(u), nng_url_path(u2));
+	nng_url_free(u);
+	NUTS_CLOSE(s1);
+}
+
+void
+test_dial_url(void)
+{
+	nng_socket     s1;
+	nng_dialer     d;
+	nng_url       *u;
+	const nng_url *u2;
+
+	NUTS_OPEN(s1);
+	NUTS_PASS(nng_url_parse(&u, "inproc://dial_url"));
+
+	NUTS_PASS(nng_dial_url(s1, u, &d, NNG_FLAG_NONBLOCK));
+	nng_dialer_get_url(d, &u2);
+
+	NUTS_MATCH(nng_url_scheme(u), nng_url_scheme(u2));
+	NUTS_MATCH(nng_url_path(u), nng_url_path(u2));
+	nng_url_free(u);
 
 	NUTS_CLOSE(s1);
 }
@@ -542,17 +544,19 @@ NUTS_TESTS = {
 	{ "send timeout", test_send_timeout },
 	{ "send non-block", test_send_nonblock },
 	{ "socket base", test_socket_base },
-	{ "socket name", test_socket_name },
-	{ "socket name oversize", test_socket_name_oversize },
 	{ "send recv", test_send_recv },
 	{ "send recv zero length", test_send_recv_zero_length },
 	{ "connection refused", test_connection_refused },
 	{ "late connection", test_late_connection },
 	{ "address busy", test_address_busy },
 	{ "bad url", test_bad_url },
-	{ "url option", test_url_option },
+	{ "endpoint url", test_endpoint_url },
 	{ "listener options", test_listener_options },
+	{ "listener create url", test_listener_create_url },
+	{ "listen url", test_listen_url },
 	{ "dialer options", test_dialer_options },
+	{ "dialer create url", test_dialer_create_url },
+	{ "dial url", test_dial_url },
 	{ "timeout options", test_timeout_options },
 	{ "size options", test_size_options },
 	{ "endpoint absent options", test_endpoint_absent_options },

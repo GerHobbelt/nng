@@ -117,9 +117,9 @@ trantest_init(trantest *tt, const char *addr)
 	So(nng_rep_open(&tt->repsock) == 0);
 
 	nng_url *url;
-	So(nng_url_parse(&url, tt->addr) == 0);
-	tt->tran = nni_sp_tran_find(url);
+	tt->tran = nni_sp_tran_find(addr);
 	So(tt->tran != NULL);
+	So(nng_url_parse(&url, tt->addr) == 0);
 	nng_url_free(url);
 }
 
@@ -244,7 +244,6 @@ trantest_send_recv(trantest *tt)
 		nng_msg     *send;
 		nng_msg     *recv;
 		size_t       len;
-		char        *url;
 
 		So(trantest_listen(tt, &l) == 0);
 		So(nng_listener_id(l) > 0);
@@ -277,9 +276,6 @@ trantest_send_recv(trantest *tt)
 		So(strcmp(nng_msg_body(recv), "acknowledge") == 0);
 		p = nng_msg_get_pipe(recv);
 		So(nng_pipe_id(p) > 0);
-		So(nng_pipe_get_string(p, NNG_OPT_URL, &url) == 0);
-		So(strcmp(url, tt->addr) == 0);
-		nng_strfree(url);
 		nng_msg_free(recv);
 	});
 }
@@ -293,7 +289,6 @@ trantest_send_recv_multi(trantest *tt)
 		nng_pipe     p = NNG_PIPE_INITIALIZER;
 		nng_msg     *send;
 		nng_msg     *recv;
-		char        *url;
 		int          i;
 		char         msgbuf[16];
 
@@ -331,9 +326,6 @@ trantest_send_recv_multi(trantest *tt)
 			So(strcmp(nng_msg_body(recv), msgbuf) == 0);
 			p = nng_msg_get_pipe(recv);
 			So(nng_pipe_id(p) > 0);
-			So(nng_pipe_get_string(p, NNG_OPT_URL, &url) == 0);
-			So(strcmp(url, tt->addr) == 0);
-			nng_strfree(url);
 			nng_msg_free(recv);
 		}
 	});

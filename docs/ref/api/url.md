@@ -12,39 +12,79 @@ that are not part of the IETF standards.
 
 ```c
 typedef struct nng_url {
-    char *u_rawurl;
-    char *u_scheme;
-    char *u_userinfo;
-    char *u_host;
-    char *u_hostname;
-    char *u_port;
-    char *u_path;
-    char *u_query;
-    char *u_fragment;
-    char *u_requri;
+    const char *u_scheme;
+    char       *u_userinfo;
+    char       *u_hostname;
+    uint16_t   u_port;
+    char       *u_path;
+    char       *u_query;
+    char       *u_fragment;
 } nng_url;
+
+const char *nng_url_scheme(const nng_url *url);
+const char *nng_url_userinfo(const nng_url *url);
+const char *nng_url_hostname(const nng_url *url);
+uint16_t    nng_url_port(const nng_url *url);
+const char *nng_url_path(const nng_url *url);
+const char *nng_url_query(const nng_url *url);
+const char *nng_url_fragment(const nng_url *url):
 ```
 
 ### URL Fields
 
-Applications may access individual fields, but must not free or
-alter them, as the underlying memory is managed by the library.
+The {{i:`nng_url_scheme`}} function returns the scheme,
+without any colons or slashes. Values are lower case
+strings, like "http" or "inproc" or "tls+tcp4".
 
-The fields of an `nng_url` object are as follows:
+The {{i:`nng_url_userinfo`}} function returns a string corresponding
+to the user component of a URL (the part before any `@` sign) if such
+a component is present, otherwise it returns `NULL`.
 
-- `u_rawurl`: The unparsed URL string. This will never be `NULL`.
-- `u_scheme`: The URL scheme, such as "http" or "inproc". Always lower case. This will never be `NULL`.
-- `u_userinfo`: This username and password if supplied in the URL string. Will be `NULL` when not present.
-- `u_host`: The full host part of the URL, including the port if present (separated by a colon.)
-- `u_hostname`: The name of the host, and may be the empty string in some cases.
-- `u_port`: The port. May be empty if irrelevant or not specified.
-- `u_path`: The path, typically used with HTTP or WebSockets. Will be empty string if not specified.
-- `u_query`: The query info (typically following `?` in the URL.) Will be `NULL` if not present.
-- `u_fragment`: This is used for specifying an anchor, the part after `#` in a URL. Will be `NULL` if not present.
-- `u_requri`: The full Request-URI. Will be the empty string if not specified.
+The {{i:`nng_url_hostname`}} function returns a hostname (which might
+actually be an IP address) from the URL, if the URL corresponds to a scheme
+that uses hostnames (like "http" or "tcp"). If the URL does not (for example
+"inproc" or "ipc" URLs) then it returns `NULL`.
 
-> [!NOTE]
-> Other fields may also be present, but only those documented here are safe for application use.
+The {{i:`nng_url_port`}} function returns the TCP or UDP port number if the URL
+corresponds to a protocol based on TCP or UDP. It returns zero otherwise.
+Note that the port number might not have been explicitly specified in the URL.
+For example, the port number associated with "http://www.example.com" is 80,
+which is the standard port number for HTTP.
+
+> [!TIP]
+> The port number returned by this is in the native machine byte order.
+> Be careful when using this with other network-oriented APIs.
+
+The {{i:`nng_url_path`}} function returns the path component of the URL.
+This will always be non-`NULL`, but it may be empty.
+
+The {{i:`nng_url_query`}} and {{i:`nng_url_fragment`}} functions return
+the query-information (the part following a '?') and fragment
+(the part following a '#') if those components are present, or `NULL`
+if they are not. The returned string will not include the leading '?' or '#'
+characters.
+
+Note that any strings returned by these functions are only valid until
+_url_ is freed with [`nng_url_free`].
+
+## Format a URL
+
+```c
+int nng_url_sprintf(char *buf, size_t bufsz, const nng_url *url);
+```
+
+The {{i:`nng_url_sprintf`}} function formats the _url_ to the _buf_,
+which must have `bufsz` bytes of free space associated with it.
+
+This function returns the number of bytes formatted to _buf_, excludng
+the terminating zero byte, or if _bufsz_ is too small, then it returns
+the number of bytes that would have been formatted if there was sufficient
+space. The semantics are similar to the `snprintf` function from C99.
+
+> [!TIP]
+> If _bufsz_ is 0, then _buf_ can be `NULL`, and the return value
+> can be used to determine the amount of space to allocate for a dynamically
+> sized buffer.
 
 ## Parse a URL
 

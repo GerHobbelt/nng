@@ -676,9 +676,15 @@ udp_recv_data(udp_ep *ep, udp_sp_data *dreq, size_t len, nng_sockaddr *sa)
 		return;
 	}
 
+	// We have a choice to make.  Drop this message (easiest), or
+	// drop the oldest.  We drop the oldest because generally we
+	// find that applications prefer to have more recent data rather
+	// than keeping stale data.
 	if (nni_lmq_full(&p->rx_mq)) {
+		nni_msg *old;
+		(void) nni_lmq_get(&p->rx_mq, &old);
+		nni_msg_free(old);
 		nni_stat_inc(&ep->st_rcv_nobuf, 1);
-		return;
 	}
 
 	// Short message, just alloc and copy
@@ -1437,8 +1443,7 @@ udp_check_url(nng_url *url, bool listen)
 		return (NNG_EADDRINVAL);
 	}
 	if (!listen) {
-		if ((strlen(url->u_hostname) == 0) ||
-		    (strlen(url->u_port) == 0) || (atoi(url->u_port) == 0)) {
+		if ((strlen(url->u_hostname) == 0) || (url->u_port == 0)) {
 			return (NNG_EADDRINVAL);
 		}
 	}
@@ -1641,38 +1646,6 @@ udp_ep_get_port(void *arg, void *buf, size_t *szp, nni_type t)
 }
 
 static int
-udp_ep_get_url(void *arg, void *v, size_t *szp, nni_opt_type t)
-{
-	udp_ep      *ep = arg;
-	char        *s;
-	int          rv;
-	int          port = 0;
-	nng_sockaddr sa;
-
-	nni_mtx_lock(&ep->mtx);
-	if (ep->udp != NULL) {
-		(void) nni_udp_sockname(ep->udp, &sa);
-	} else {
-		sa = ep->self_sa;
-	}
-	switch (sa.s_family) {
-	case NNG_AF_INET:
-		NNI_GET16((uint8_t *) &sa.s_in.sa_port, port);
-		break;
-	case NNG_AF_INET6:
-		NNI_GET16((uint8_t *) &sa.s_in6.sa_port, port);
-		break;
-	}
-	if ((rv = nni_url_asprintf_port(&s, ep->url, port)) == 0) {
-		rv = nni_copyout_str(s, v, szp, t);
-		nni_strfree(s);
-	}
-	nni_mtx_unlock(&ep->mtx);
-
-	return (rv);
-}
-
-static int
 udp_ep_get_locaddr(void *arg, void *v, size_t *szp, nni_opt_type t)
 {
 	udp_ep      *ep = arg;
@@ -1796,7 +1769,7 @@ udp_ep_start(udp_ep *ep)
 }
 
 static int
-udp_ep_bind(void *arg)
+udp_ep_bind(void *arg, nng_url *url)
 {
 	udp_ep *ep = arg;
 	int     rv;
@@ -1812,6 +1785,9 @@ udp_ep_bind(void *arg)
 		nni_mtx_unlock(&ep->mtx);
 		return (rv);
 	}
+	nng_sockaddr sa;
+	nni_plat_udp_sockname(ep->udp, &sa);
+	url->u_port = nng_sockaddr_port(&sa);
 	udp_ep_start(ep);
 	nni_mtx_unlock(&ep->mtx);
 
@@ -1864,10 +1840,6 @@ static const nni_option udp_ep_opts[] = {
 	    .o_name = NNG_OPT_UDP_COPY_MAX,
 	    .o_get  = udp_ep_get_copymax,
 	    .o_set  = udp_ep_set_copymax,
-	},
-	{
-	    .o_name = NNG_OPT_URL,
-	    .o_get  = udp_ep_get_url,
 	},
 	{
 	    .o_name = NNG_OPT_LOCADDR,

@@ -723,6 +723,9 @@ main(int ac, char **av)
 	addrend  = &addrs;
 	topicend = &topics;
 
+	nng_init(NULL);
+	atexit(nng_fini);
+
 	while ((rv = nng_opts_parse(ac, av, opts, &val, &arg, &idx)) == 0) {
 		switch (val) {
 		case OPT_HELP:
@@ -1103,8 +1106,7 @@ main(int ac, char **av)
 				fatal("Unable to create dialer for %s: %s",
 				    a->val, nng_strerror(rv));
 			}
-			rv = nng_dialer_get_ptr(
-			    d, NNG_OPT_TLS_CONFIG, (void **) &tls);
+			rv = nng_dialer_get_tls(d, &tls);
 			if (rv == 0) {
 				configtls(tls);
 			} else if (rv != NNG_ENOTSUP) {
@@ -1122,11 +1124,11 @@ main(int ac, char **av)
 			rv  = nng_dialer_start(d, async);
 			act = "dial";
 			if ((rv == 0) && (verbose == OPT_VERBOSE)) {
-				char *ustr;
-				if (nng_dialer_get_string(
-				        d, NNG_OPT_URL, &ustr) == 0) {
-					printf("Connected to: %s\n", ustr);
-					nng_strfree(ustr);
+				char           us[NNG_MAXADDRSTRLEN];
+				const nng_url *url;
+				if (nng_dialer_get_url(d, &url) == 0) {
+					nng_url_sprintf(us, sizeof(us), url);
+					printf("Connected to: %s\n", us);
 				}
 			}
 			break;
@@ -1138,8 +1140,7 @@ main(int ac, char **av)
 				fatal("Unable to create listener for %s: %s",
 				    a->val, nng_strerror(rv));
 			}
-			rv = nng_listener_get_ptr(
-			    l, NNG_OPT_TLS_CONFIG, (void **) &tls);
+			rv = nng_listener_get_tls(l, &tls);
 			if (rv == 0) {
 				configtls(tls);
 			} else if (rv != NNG_ENOTSUP) {
@@ -1157,11 +1158,11 @@ main(int ac, char **av)
 			rv  = nng_listener_start(l, async);
 			act = "listen";
 			if ((rv == 0) && (verbose == OPT_VERBOSE)) {
-				char *ustr;
-				if (nng_listener_get_string(
-				        l, NNG_OPT_URL, &ustr) == 0) {
-					printf("Listening at: %s\n", ustr);
-					nng_strfree(ustr);
+				const nng_url *url;
+				char           us[NNG_MAXADDRSTRLEN];
+				if (nng_listener_get_url(l, &url) == 0) {
+					nng_url_sprintf(us, sizeof(us), url);
+					printf("Listening at: %s\n", us);
 				}
 			}
 			break;

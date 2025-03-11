@@ -283,7 +283,7 @@ inproc_pipe_get_addr(void *arg, void *buf, size_t *szp, nni_opt_type t)
 }
 
 static int
-inproc_dialer_init(void **epp, nni_url *url, nni_dialer *ndialer)
+inproc_dialer_init(void **epp, nng_url *url, nni_dialer *ndialer)
 {
 	inproc_ep *ep;
 	nni_sock  *sock = nni_dialer_sock(ndialer);
@@ -299,14 +299,14 @@ inproc_dialer_init(void **epp, nni_url *url, nni_dialer *ndialer)
 	NNI_LIST_INIT(&ep->clients, inproc_ep, node);
 	nni_aio_list_init(&ep->aios);
 
-	ep->addr = url->u_rawurl; // we match on the full URL.
+	ep->addr = url->u_path; // we match on the URL path.
 
 	*epp = ep;
 	return (0);
 }
 
 static int
-inproc_listener_init(void **epp, nni_url *url, nni_listener *nlistener)
+inproc_listener_init(void **epp, nng_url *url, nni_listener *nlistener)
 {
 	inproc_ep *ep;
 	nni_sock  *sock = nni_listener_sock(nlistener);
@@ -322,7 +322,7 @@ inproc_listener_init(void **epp, nni_url *url, nni_listener *nlistener)
 	NNI_LIST_INIT(&ep->clients, inproc_ep, node);
 	nni_aio_list_init(&ep->aios);
 
-	ep->addr = url->u_rawurl; // we match on the full URL.
+	ep->addr = url->u_path; // we match on the path
 
 	*epp = ep;
 	return (0);
@@ -510,11 +510,12 @@ inproc_ep_connect(void *arg, nni_aio *aio)
 }
 
 static int
-inproc_ep_bind(void *arg)
+inproc_ep_bind(void *arg, nng_url *url)
 {
 	inproc_ep *ep = arg;
 	inproc_ep *srch;
 	nni_list  *list = &nni_inproc.servers;
+	NNI_ARG_UNUSED(url);
 
 	nni_mtx_lock(&nni_inproc.mx);
 	NNI_LIST_FOREACH (list, srch) {
@@ -685,14 +686,6 @@ struct nni_sp_tran nni_inproc_tran = {
 	.tran_init     = inproc_init,
 	.tran_fini     = inproc_fini,
 };
-
-#ifndef NNG_ELIDE_DEPRECATED
-int
-nng_inproc_register(void)
-{
-	return (nni_init());
-}
-#endif
 
 void
 nni_sp_inproc_register(void)

@@ -25,13 +25,6 @@
 #include <stdio.h>
 #include <string.h>
 
-void
-nng_fini(void)
-{
-	nni_sock_closeall();
-	nni_fini();
-}
-
 int
 nng_close(nng_socket s)
 {
@@ -410,8 +403,7 @@ ctx_get(nng_ctx id, const char *n, void *v, size_t *szp, nni_type t)
 	nni_ctx *ctx;
 	int      rv;
 
-	if (((rv = nni_init()) != 0) ||
-	    ((rv = nni_ctx_find(&ctx, id.id, false)) != 0)) {
+	if ((rv = nni_ctx_find(&ctx, id.id, false)) != 0) {
 		return (rv);
 	}
 	rv = nni_ctx_getopt(ctx, n, v, szp, t);
@@ -467,8 +459,7 @@ ctx_set(nng_ctx id, const char *n, const void *v, size_t sz, nni_type t)
 	nni_ctx *ctx;
 	int      rv;
 
-	if (((rv = nni_init()) != 0) ||
-	    ((rv = nni_ctx_find(&ctx, id.id, false)) != 0)) {
+	if ((rv = nni_ctx_find(&ctx, id.id, false)) != 0) {
 		return (rv);
 	}
 	rv = nni_ctx_setopt(ctx, n, v, sz, t);
@@ -547,6 +538,33 @@ nng_dial(nng_socket sid, const char *addr, nng_dialer *dp, int flags)
 }
 
 int
+nng_dial_url(nng_socket sid, const nng_url *url, nng_dialer *dp, int flags)
+{
+	nni_dialer *d;
+	int         rv;
+	nni_sock   *s;
+
+	if ((rv = nni_sock_find(&s, sid.id)) != 0) {
+		return (rv);
+	}
+	if ((rv = nni_dialer_create_url(&d, s, url)) != 0) {
+		nni_sock_rele(s);
+		return (rv);
+	}
+	if ((rv = nni_dialer_start(d, flags)) != 0) {
+		nni_dialer_close(d);
+		return (rv);
+	}
+	if (dp != NULL) {
+		nng_dialer did;
+		did.id = nni_dialer_id(d);
+		*dp    = did;
+	}
+	nni_dialer_rele(d);
+	return (0);
+}
+
+int
 nng_listen(nng_socket sid, const char *addr, nng_listener *lp, int flags)
 {
 	int           rv;
@@ -557,6 +575,34 @@ nng_listen(nng_socket sid, const char *addr, nng_listener *lp, int flags)
 		return (rv);
 	}
 	if ((rv = nni_listener_create(&l, s, addr)) != 0) {
+		nni_sock_rele(s);
+		return (rv);
+	}
+	if ((rv = nni_listener_start(l, flags)) != 0) {
+		nni_listener_close(l);
+		return (rv);
+	}
+
+	if (lp != NULL) {
+		nng_listener lid;
+		lid.id = nni_listener_id(l);
+		*lp    = lid;
+	}
+	nni_listener_rele(l);
+	return (rv);
+}
+
+int
+nng_listen_url(nng_socket sid, const nng_url *url, nng_listener *lp, int flags)
+{
+	int           rv;
+	nni_sock     *s;
+	nni_listener *l;
+
+	if ((rv = nni_sock_find(&s, sid.id)) != 0) {
+		return (rv);
+	}
+	if ((rv = nni_listener_create_url(&l, s, url)) != 0) {
 		nni_sock_rele(s);
 		return (rv);
 	}
@@ -586,6 +632,27 @@ nng_listener_create(nng_listener *lp, nng_socket sid, const char *addr)
 		return (rv);
 	}
 	if ((rv = nni_listener_create(&l, s, addr)) != 0) {
+		nni_sock_rele(s);
+		return (rv);
+	}
+	lid.id = nni_listener_id(l);
+	*lp    = lid;
+	nni_listener_rele(l);
+	return (0);
+}
+
+int
+nng_listener_create_url(nng_listener *lp, nng_socket sid, const nng_url *url)
+{
+	nni_sock     *s;
+	int           rv;
+	nni_listener *l;
+	nng_listener  lid;
+
+	if ((rv = nni_sock_find(&s, sid.id)) != 0) {
+		return (rv);
+	}
+	if ((rv = nni_listener_create_url(&l, s, url)) != 0) {
 		nni_sock_rele(s);
 		return (rv);
 	}
@@ -637,6 +704,27 @@ nng_dialer_create(nng_dialer *dp, nng_socket sid, const char *addr)
 }
 
 int
+nng_dialer_create_url(nng_dialer *dp, nng_socket sid, const nng_url *url)
+{
+	nni_sock   *s;
+	nni_dialer *d;
+	int         rv;
+	nng_dialer  did;
+
+	if ((rv = nni_sock_find(&s, sid.id)) != 0) {
+		return (rv);
+	}
+	if ((rv = nni_dialer_create_url(&d, s, url)) != 0) {
+		nni_sock_rele(s);
+		return (rv);
+	}
+	did.id = nni_dialer_id(d);
+	*dp    = did;
+	nni_dialer_rele(d);
+	return (0);
+}
+
+int
 nng_dialer_start(nng_dialer did, int flags)
 {
 	nni_dialer *d;
@@ -662,9 +750,6 @@ dialer_set(nng_dialer id, const char *n, const void *v, size_t sz, nni_type t)
 	nni_dialer *d;
 	int         rv;
 
-	if ((rv = nni_init()) != 0) {
-		return (rv);
-	}
 	if ((rv = nni_dialer_find(&d, id.id)) != 0) {
 		return (rv);
 	}
@@ -728,9 +813,6 @@ dialer_get(nng_dialer id, const char *n, void *v, size_t *szp, nni_type t)
 	nni_dialer *d;
 	int         rv;
 
-	if ((rv = nni_init()) != 0) {
-		return (rv);
-	}
 	if ((rv = nni_dialer_find(&d, id.id)) != 0) {
 		return (rv);
 	}
@@ -787,6 +869,32 @@ nng_dialer_get_addr(nng_dialer id, const char *n, nng_sockaddr *v)
 	return (dialer_get(id, n, v, NULL, NNI_TYPE_SOCKADDR));
 }
 
+int
+nng_dialer_get_tls(nng_dialer id, nng_tls_config **cfgp)
+{
+	int         rv;
+	nni_dialer *d;
+	if ((rv = nni_dialer_find(&d, id.id)) != 0) {
+		return (rv);
+	}
+	rv = nni_dialer_get_tls(d, cfgp);
+	nni_dialer_rele(d);
+	return (rv);
+}
+
+int
+nng_dialer_set_tls(nng_dialer id, nng_tls_config *cfg)
+{
+	int         rv;
+	nni_dialer *d;
+	if ((rv = nni_dialer_find(&d, id.id)) != 0) {
+		return (rv);
+	}
+	rv = nni_dialer_set_tls(d, cfg);
+	nni_dialer_rele(d);
+	return (rv);
+}
+
 static int
 listener_set(
     nng_listener lid, const char *name, const void *v, size_t sz, nni_type t)
@@ -794,9 +902,6 @@ listener_set(
 	nni_listener *l;
 	int           rv;
 
-	if ((rv = nni_init()) != 0) {
-		return (rv);
-	}
 	if ((rv = nni_listener_find(&l, lid.id)) != 0) {
 		return (rv);
 	}
@@ -861,9 +966,6 @@ listener_get(
 	nni_listener *l;
 	int           rv;
 
-	if ((rv = nni_init()) != 0) {
-		return (rv);
-	}
 	if ((rv = nni_listener_find(&l, lid.id)) != 0) {
 		return (rv);
 	}
@@ -921,6 +1023,58 @@ nng_listener_get_addr(nng_listener id, const char *n, nng_sockaddr *v)
 }
 
 int
+nng_listener_get_tls(nng_listener id, nng_tls_config **cfgp)
+{
+	int           rv;
+	nni_listener *l;
+	if ((rv = nni_listener_find(&l, id.id)) != 0) {
+		return (rv);
+	}
+	rv = nni_listener_get_tls(l, cfgp);
+	nni_listener_rele(l);
+	return (rv);
+}
+
+int
+nng_listener_set_tls(nng_listener id, nng_tls_config *cfg)
+{
+	int           rv;
+	nni_listener *l;
+	if ((rv = nni_listener_find(&l, id.id)) != 0) {
+		return (rv);
+	}
+	rv = nni_listener_set_tls(l, cfg);
+	nni_listener_rele(l);
+	return (rv);
+}
+
+int
+nng_dialer_get_url(nng_dialer id, const nng_url **urlp)
+{
+	int         rv;
+	nni_dialer *d;
+	if ((rv = nni_dialer_find(&d, id.id)) != 0) {
+		return (rv);
+	}
+	*urlp = nni_dialer_url(d);
+	nni_dialer_rele(d);
+	return (0);
+}
+
+int
+nng_listener_get_url(nng_listener id, const nng_url **urlp)
+{
+	int           rv;
+	nni_listener *l;
+	if ((rv = nni_listener_find(&l, id.id)) != 0) {
+		return (rv);
+	}
+	*urlp = nni_listener_url(l);
+	nni_listener_rele(l);
+	return (0);
+}
+
+int
 nng_dialer_close(nng_dialer did)
 {
 	nni_dialer *d;
@@ -953,9 +1107,6 @@ socket_set(
 	nni_sock *sock;
 	int       rv;
 
-	if ((rv = nni_init()) != 0) {
-		return (rv);
-	}
 	if ((rv = nni_sock_find(&sock, s.id)) != 0) {
 		return (rv);
 	}
@@ -1013,9 +1164,6 @@ socket_get(nng_socket s, const char *name, void *val, size_t *szp, nni_type t)
 	nni_sock *sock;
 	int       rv;
 
-	if ((rv = nni_init()) != 0) {
-		return (rv);
-	}
 	if ((rv = nni_sock_find(&sock, s.id)) != 0) {
 		return (rv);
 	}
@@ -1072,8 +1220,7 @@ nng_socket_get_recv_poll_fd(nng_socket id, int *fdp)
 	int       rv;
 	nni_sock *sock;
 
-	if (((rv = nni_init()) != 0) ||
-	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+	if ((rv = nni_sock_find(&sock, id.id)) != 0) {
 		return (rv);
 	}
 
@@ -1088,8 +1235,7 @@ nng_socket_get_send_poll_fd(nng_socket id, int *fdp)
 	int       rv;
 	nni_sock *sock;
 
-	if (((rv = nni_init()) != 0) ||
-	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+	if ((rv = nni_sock_find(&sock, id.id)) != 0) {
 		return (rv);
 	}
 
@@ -1104,8 +1250,7 @@ nng_socket_proto_id(nng_socket id, uint16_t *idp)
 	int       rv;
 	nni_sock *sock;
 
-	if (((rv = nni_init()) != 0) ||
-	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+	if ((rv = nni_sock_find(&sock, id.id)) != 0) {
 		return (rv);
 	}
 
@@ -1120,8 +1265,7 @@ nng_socket_peer_id(nng_socket id, uint16_t *idp)
 	int       rv;
 	nni_sock *sock;
 
-	if (((rv = nni_init()) != 0) ||
-	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+	if ((rv = nni_sock_find(&sock, id.id)) != 0) {
 		return (rv);
 	}
 
@@ -1136,8 +1280,7 @@ nng_socket_proto_name(nng_socket id, const char **name)
 	int       rv;
 	nni_sock *sock;
 
-	if (((rv = nni_init()) != 0) ||
-	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+	if ((rv = nni_sock_find(&sock, id.id)) != 0) {
 		return (rv);
 	}
 
@@ -1152,8 +1295,7 @@ nng_socket_peer_name(nng_socket id, const char **name)
 	int       rv;
 	nni_sock *sock;
 
-	if (((rv = nni_init()) != 0) ||
-	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+	if ((rv = nni_sock_find(&sock, id.id)) != 0) {
 		return (rv);
 	}
 
@@ -1168,8 +1310,7 @@ nng_socket_raw(nng_socket id, bool *rawp)
 	int       rv;
 	nni_sock *sock;
 
-	if (((rv = nni_init()) != 0) ||
-	    ((rv = nni_sock_find(&sock, id.id)) != 0)) {
+	if ((rv = nni_sock_find(&sock, id.id)) != 0) {
 		return (rv);
 	}
 	*rawp = nni_sock_raw(sock);
@@ -1183,9 +1324,6 @@ nng_pipe_notify(nng_socket s, nng_pipe_ev ev, nng_pipe_cb cb, void *arg)
 	int       rv;
 	nni_sock *sock;
 
-	if ((rv = nni_init()) != 0) {
-		return (rv);
-	}
 	if ((rv = nni_sock_find(&sock, s.id)) != 0) {
 		return (rv);
 	}
@@ -1234,9 +1372,6 @@ nng_device(nng_socket s1, nng_socket s2)
 {
 	nni_aio aio;
 	int     rv;
-	if ((rv = nni_init()) != 0) {
-		return (rv);
-	}
 	nni_aio_init(&aio, NULL, NULL);
 	nng_device_aio(&aio, s1, s2);
 	nni_aio_wait(&aio);
@@ -1320,9 +1455,6 @@ pipe_get(nng_pipe p, const char *name, void *val, size_t *szp, nni_type t)
 	int       rv;
 	nni_pipe *pipe;
 
-	if ((rv = nni_init()) < 0) {
-		return (rv);
-	}
 	if ((rv = nni_pipe_find(&pipe, p.id)) != 0) {
 		return (rv);
 	}
@@ -1385,7 +1517,7 @@ nng_pipe_socket(nng_pipe p)
 	nng_socket s = NNG_SOCKET_INITIALIZER;
 	nni_pipe  *pipe;
 
-	if ((nni_init() == 0) && (nni_pipe_find(&pipe, p.id) == 0)) {
+	if (nni_pipe_find(&pipe, p.id) == 0) {
 		s.id = nni_pipe_sock_id(pipe);
 		nni_pipe_rele(pipe);
 	}
@@ -1397,7 +1529,7 @@ nng_pipe_dialer(nng_pipe p)
 {
 	nng_dialer d = NNG_DIALER_INITIALIZER;
 	nni_pipe  *pipe;
-	if ((nni_init() == 0) && (nni_pipe_find(&pipe, p.id) == 0)) {
+	if (nni_pipe_find(&pipe, p.id) == 0) {
 		d.id = nni_pipe_dialer_id(pipe);
 		nni_pipe_rele(pipe);
 	}
@@ -1409,7 +1541,7 @@ nng_pipe_listener(nng_pipe p)
 {
 	nng_listener l = NNG_LISTENER_INITIALIZER;
 	nni_pipe    *pipe;
-	if ((nni_init() == 0) && (nni_pipe_find(&pipe, p.id) == 0)) {
+	if (nni_pipe_find(&pipe, p.id) == 0) {
 		l.id = nni_pipe_listener_id(pipe);
 		nni_pipe_rele(pipe);
 	}
@@ -1862,9 +1994,6 @@ nng_aio_alloc(nng_aio **app, void (*cb)(void *), void *arg)
 	nng_aio *aio;
 	int      rv;
 
-	if ((rv = nni_init()) != 0) {
-		return (rv);
-	}
 	if ((rv = nni_aio_alloc(&aio, (nni_cb) cb, arg)) == 0) {
 		nng_aio_set_timeout(aio, NNG_DURATION_DEFAULT);
 		*app = aio;
@@ -2015,24 +2144,6 @@ nng_aio_begin(nng_aio *aio)
 	return (true);
 }
 
-int
-nng_url_parse(nng_url **result, const char *ustr)
-{
-	return (nni_url_parse(result, ustr));
-}
-
-void
-nng_url_free(nng_url *url)
-{
-	nni_url_free(url);
-}
-
-int
-nng_url_clone(nng_url **dstp, const nng_url *src)
-{
-	return (nni_url_clone(dstp, src));
-}
-
 #define xstr(a) str(a)
 #define str(a) #a
 
@@ -2043,16 +2154,9 @@ nng_version(void)
 	    NNG_PATCH_VERSION) NNG_RELEASE_SUFFIX);
 }
 
-void
-nng_init_set_parameter(nng_init_parameter p, uint64_t value)
-{
-	nni_init_set_param(p, value);
-}
-
 nng_time
 nng_clock(void)
 {
-	(void) nni_init();
 	return (nni_clock());
 }
 
@@ -2060,7 +2164,6 @@ nng_clock(void)
 void
 nng_msleep(nng_duration dur)
 {
-	(void) nni_init();
 	nni_msleep(dur);
 }
 
@@ -2073,8 +2176,6 @@ nng_thread_create(nng_thread **thrp, void (*func)(void *), void *arg)
 {
 	nni_thr *thr;
 	int      rv;
-
-	(void) nni_init();
 
 	if ((thr = NNI_ALLOC_STRUCT(thr)) == NULL) {
 		return (NNG_ENOMEM);
@@ -2111,8 +2212,6 @@ int
 nng_mtx_alloc(nng_mtx **mpp)
 {
 	nng_mtx *mp;
-
-	(void) nni_init();
 
 	if ((mp = NNI_ALLOC_STRUCT(mp)) == NULL) {
 		return (NNG_ENOMEM);
@@ -2196,7 +2295,6 @@ nng_cv_wake1(nng_cv *cv)
 uint32_t
 nng_random(void)
 {
-	(void) nni_init();
 	return (nni_random());
 }
 
@@ -2209,7 +2307,6 @@ nng_socket_pair(int fds[2])
 int
 nng_udp_open(nng_udp **udp, nng_sockaddr *sa)
 {
-	(void) nni_init();
 	return (nni_plat_udp_open((nni_plat_udp **) udp, sa));
 }
 
