@@ -313,50 +313,20 @@ extern int nni_tcp_dialer_set(
 extern int nni_tcp_dialer_get(
     nni_tcp_dialer *, const char *, void *, size_t *, nni_type);
 
-// nni_tcp_listener_init creates a new listener object, unbound.
-extern int nni_tcp_listener_init(nni_tcp_listener **);
+// nni_resolv_item (and nni_resolv) are used to perform a DNS lookup.
+// The item is just a container for common arguments to the resolver.
+// The host and sockaddr pointers need to remain valid until the
+// resolution is complete (as indicated by completion of the aio.)
+typedef struct nni_resolv_item {
+	int           ri_family;  // address family, NNG_AF_INET/NNG_AF_INET6
+	bool          ri_passive; // used for bind, permits ri_host to be NULL
+	const char   *ri_host;    // hostname, may be NULL only if ri_passive
+	uint16_t      ri_port;    // port number, native byte order
+	nng_sockaddr *ri_sa;      // where result will be written
 
-// nni_tcp_listener_fini frees the listener and all associated resources.
-// It implicitly closes the listener as well.
-extern void nni_tcp_listener_fini(nni_tcp_listener *);
+} nni_resolv_item;
 
-// nni_tcp_listener_close closes the listener.  This will unbind
-// any bound socket, and further operations will result in NNG_ECLOSED.
-extern void nni_tcp_listener_close(nni_tcp_listener *);
-
-// nni_tcp_listener_stop is close + waits for any operations to stop,
-// so there won't be any further accepts after this.
-extern void nni_tcp_listener_stop(nni_tcp_listener *);
-
-// nni_tcp_listener_listen creates the socket in listening mode, bound
-// to the specified address.
-extern int nni_tcp_listener_listen(nni_tcp_listener *, const nni_sockaddr *);
-
-// nni_tcp_listener_accept accepts in incoming connect, asynchronously.
-// On success, the first (and only) output will be an nni_tcp_conn *
-// associated with the remote peer.
-extern void nni_tcp_listener_accept(nni_tcp_listener *, nni_aio *);
-
-// nni_tcp_listener_set sets an option on the listener.
-extern int nni_tcp_listener_set(
-    nni_tcp_listener *, const char *, const void *, size_t, nni_type);
-
-// nni_tcp_listener_get gets an option from the listener.  The most common
-// use for this is to retrieve the setting of the NNG_OPT_TCP_LOCADDR
-// address after binding to wild card port (0).
-extern int nni_tcp_listener_get(
-    nni_tcp_listener *, const char *, void *, size_t *, nni_type);
-
-// nni_resolv_ip resolves a DNS host and service name asynchronously.
-// The family should be one of NNG_AF_INET, NNG_AF_INET6, or NNG_AF_UNSPEC.
-// The first two constrain the name to those families, while the third will
-// return names of either family.  The passive flag indicates that the
-// name will be used for bind(), otherwise the name will be used with
-// connect().  The host part may be NULL only if passive is true.
-// Symbolic service names will be looked up assuming SOCK_STREAM, so
-// they may not work with UDP.
-extern void nni_resolv_ip(
-    const char *, uint16_t, int, bool, nng_sockaddr *sa, nni_aio *);
+extern void nni_resolv(nni_resolv_item *, nni_aio *);
 
 // nni_parse_ip parses an IP address, without a port.
 extern int nni_parse_ip(const char *, nng_sockaddr *);

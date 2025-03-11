@@ -18,7 +18,7 @@ else ()
 endif ()
 
 # Global options.
-option(BUILD_SHARED_LIBS "Build shared library" ${BUILD_SHARED_LIBS})
+option(BUILD_SHARED_LIBS "Build shared library" ON)
 
 # We only build command line tools and tests if we are not in a
 # cross-compile situation.  Cross-compiling users who still want to
@@ -138,14 +138,8 @@ mark_as_advanced(NNG_TRANSPORT_FDC)
 option (NNG_TRANSPORT_UDP "Enable UDP transport (EXPERIMENTAL)" ON)
 mark_as_advanced(NNG_TRANSPORT_UDP)
 
-# ZeroTier
-option (NNG_TRANSPORT_ZEROTIER "Enable ZeroTier transport (requires libzerotiercore)." OFF)
-mark_as_advanced(NNG_TRANSPORT_ZEROTIER)
-
 if (NNG_TRANSPORT_WS OR NNG_TRANSPORT_WSS)
     # Make sure things we *MUST* have are enabled.
     set(NNG_SUPP_WEBSOCKET ON)
     set(NNG_SUPP_HTTP ON)
-    set(NNG_SUPP_BASE64 ON)
-    set(NNG_SUPP_SHA1 ON)
 endif()

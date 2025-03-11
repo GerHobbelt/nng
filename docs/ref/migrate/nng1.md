@@ -13,6 +13,33 @@ See the [Migrating From libnanomsg](nanomsg.md) chapter for details.
 It is now required for applications to initialize the library explicitly before using it.
 This is done using the [`nng_init`] function.
 
+## Renamed Functions
+
+The `nng_close` function has been renamed to [`nng_socket_close`] to make it clearer that
+the object being closed is a socket. A compatible `nng_close` macro is available by defining `NNG1_TRANSITION`
+in your compilation environment.
+
+## Removed Protocol Aliases
+
+The following macro aliases are removed, unless `NNG1_TRANSITION` is defined in your compilation environment.
+
+- `nng_bus_open`
+- `nng_pair_open`
+- `nng_pub_open`
+- `nng_pull_open`
+- `nng_push_open`
+- `nng_rep_open`
+- `nng_req_open`
+- `nng_respondent_open`
+- `nng_sub_open`
+- `nng_surveyor_open`
+
+Just add either `0` or `1` (in the case of PAIRv1) to get the protocol desired. (Forcing the version number to
+be supplied should avoid surprises later as new versions of protocols are added.)
+
+Additionally, the header files for protocols are now empty, as all of their content has been moved to `nng/nng.h`.
+Please remove `#include` references to protocol headers as we anticipate removing them in the future.
+
 ## New AIO Error Code NNG_ESTOPPED
 
 When an operation fails with [`NNG_ESTOPPED`], it means that the associated [`nni_aio`] object has
@@ -49,9 +76,6 @@ can be simply removed from your application:
 
 Additionally, the header files containing these functions have been removed, such as
 `nng/transport/ipc/ipc.h`. Simply remove `#include` references to those files.
-
-(Special exception: The options for ZeroTier are still located in the
-`nng/transport/zerotier/zerotier.h`.)
 
 The `NNG_OPT_WSS_REQUEST_HEADERS` and `NNG_OPT_WSS_RESPONSE_HEADERS` aliases for
 `NNG_OPT_WS_OPT_WS_REQUEST_HEADERS` and `NNG_OPT_WS_RESPONSE_HEADERS` have been removed.
@@ -275,5 +299,11 @@ Security descriptor support is only relevant to Windows,
 and is presently only supported for IPC when Named Pipes are used.
 Planned future changes to switch to UNIX domain sockets may eliminate
 support for security descriptors altogether in NNG.
+
+## ZeroTier Support Removed
+
+The Layer 2 special ZeroTier transport has been removed.
+It is possible to use NNG with ZeroTier using TCP/IP, and a future update
+is planned to provided coexistence between ZeroTier & the native stack's TCP/IP using lwIP.
 
 {{#include ../xref.md}}

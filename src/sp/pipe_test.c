@@ -113,8 +113,8 @@ init_cases(char *addr, struct testcase *push, struct testcase *pull)
 	NUTS_PASS(nng_mtx_alloc(&pull->lk));
 	NUTS_PASS(nng_cv_alloc(&pull->cv, pull->lk));
 
-	NUTS_PASS(nng_push_open(&push->s));
-	NUTS_PASS(nng_pull_open(&pull->s));
+	NUTS_PASS(nng_push0_open(&push->s));
+	NUTS_PASS(nng_pull0_open(&pull->s));
 
 	NUTS_PASS(nng_socket_set_ms(push->s, NNG_OPT_RECONNMINT, 10));
 	NUTS_PASS(nng_socket_set_ms(push->s, NNG_OPT_RECONNMAXT, 10));
@@ -143,8 +143,8 @@ init_cases(char *addr, struct testcase *push, struct testcase *pull)
 static void
 fini_cases(struct testcase *push, struct testcase *pull)
 {
-	nng_close(push->s);
-	nng_close(pull->s);
+	nng_socket_close(push->s);
+	nng_socket_close(pull->s);
 	nng_cv_free(push->cv);
 	nng_cv_free(pull->cv);
 	nng_mtx_free(push->lk);

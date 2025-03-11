@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 //
 // This software is supplied under the terms of the MIT License, a
 // copy of which should be located in the distribution where this
@@ -9,6 +9,11 @@
 
 #include "nng/nng.h"
 #include <nuts.h>
+
+#define REP0_SELF 0x31
+#define REP0_PEER 0x30
+#define REP0_SELF_NAME "rep"
+#define REP0_PEER_NAME "req"
 
 static void
 test_xrep_identity(void)
@@ -24,10 +29,10 @@ test_xrep_identity(void)
 	NUTS_PASS(nng_socket_proto_name(s, &n1));
 	NUTS_PASS(nng_socket_peer_name(s, &n2));
 	NUTS_CLOSE(s);
-	NUTS_TRUE(p1 == NNG_REP0_SELF);
-	NUTS_TRUE(p2 == NNG_REP0_PEER);
-	NUTS_MATCH(n1, NNG_REP0_SELF_NAME);
-	NUTS_MATCH(n2, NNG_REP0_PEER_NAME);
+	NUTS_TRUE(p1 == REP0_SELF);
+	NUTS_TRUE(p2 == REP0_PEER);
+	NUTS_MATCH(n1, REP0_SELF_NAME);
+	NUTS_MATCH(n2, REP0_PEER_NAME);
 }
 
 static void
@@ -142,8 +147,8 @@ test_xrep_validate_peer(void)
 	NUTS_TRUE(nng_stat_type(reject) == NNG_STAT_COUNTER);
 	NUTS_TRUE(nng_stat_value(reject) > 0);
 
-	NUTS_PASS(nng_close(s1));
-	NUTS_PASS(nng_close(s2));
+	NUTS_CLOSE(s1);
+	NUTS_CLOSE(s2);
 	nng_stats_free(stats);
 }
 
@@ -353,7 +358,7 @@ test_xrep_ttl_option(void)
 	NUTS_TRUE(nng_socket_set_bool(rep, opt, true) == NNG_EBADTYPE);
 	NUTS_TRUE(nng_socket_get_bool(rep, opt, &b) == NNG_EBADTYPE);
 
-	NUTS_TRUE(nng_close(rep) == 0);
+	NUTS_CLOSE(rep);
 }
 
 static void

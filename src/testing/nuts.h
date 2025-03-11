@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 //
 // This software is supplied under the terms of the MIT License, a
 // copy of which should be located in the distribution where this
@@ -23,7 +23,7 @@ extern void nuts_logger(
     nng_log_level, nng_log_facility, const char *, const char *);
 
 // Call nng_fini during test finalization -- this avoids leak warnings.
-// We add a 20 millisecond delay as a hack to allow for other subsytems to
+/// We add a 20 millisecond delay as a hack to allow for other subsytems to
 // drain first. (Notably the HTTP framework can fail if we shut down too
 // quickly.  These bugs should be fixed and then the sleep can be removed.)
 #ifndef TEST_FINI
@@ -49,19 +49,7 @@ extern void nuts_logger(
 #include <string.h>
 
 // The following headers are provided for test code convenience.
-#include <nng/protocol/bus0/bus.h>
-#include <nng/protocol/pair0/pair.h>
-#include <nng/protocol/pair1/pair.h>
-#include <nng/protocol/pipeline0/pull.h>
-#include <nng/protocol/pipeline0/push.h>
-#include <nng/protocol/pubsub0/pub.h>
-#include <nng/protocol/pubsub0/sub.h>
-#include <nng/protocol/reqrep0/rep.h>
-#include <nng/protocol/reqrep0/req.h>
-#include <nng/protocol/survey0/respond.h>
-#include <nng/protocol/survey0/survey.h>
 #include <nng/supplemental/tls/tls.h>
-#include <supplemental/sha1/sha1.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -285,7 +273,7 @@ extern const char *nuts_ecdsa_client_crt;
 
 #define NUTS_OPEN(sock) NUTS_PASS(nng_pair1_open(&(sock)))
 
-#define NUTS_CLOSE(sock) NUTS_PASS(nng_close(sock))
+#define NUTS_CLOSE(sock) NUTS_PASS(nng_socket_close(sock))
 
 #define NUTS_SLEEP(ms) nuts_sleep(ms)
 

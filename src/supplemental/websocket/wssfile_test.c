@@ -68,20 +68,21 @@ init_listener_wss_file(nng_listener l)
 static void
 test_invalid_verify(void)
 {
-	uint16_t     port = nuts_next_port();
 	nng_socket   s1;
 	nng_socket   s2;
 	nng_listener l;
 	nng_dialer   d;
 	char         addr[40];
+	int          port;
 
-	(void) snprintf(addr, sizeof(addr), "wss4://:%u/test", port);
+	(void) snprintf(addr, sizeof(addr), "wss4://:0/test");
 
-	NUTS_PASS(nng_pair_open(&s1));
-	NUTS_PASS(nng_pair_open(&s2));
+	NUTS_PASS(nng_pair1_open(&s1));
+	NUTS_PASS(nng_pair1_open(&s2));
 	NUTS_PASS(nng_listener_create(&l, s1, addr));
 	init_listener_wss_file(l);
 	NUTS_PASS(nng_listener_start(l, 0));
+	NUTS_PASS(nng_listener_get_int(l, NNG_OPT_TCP_BOUND_PORT, &port));
 
 	nng_msleep(100);
 
@@ -100,8 +101,8 @@ test_invalid_verify(void)
 	NUTS_TRUE((rv == NNG_EPEERAUTH) || (rv == NNG_ECLOSED) ||
 	    (rv == NNG_ECRYPTO));
 
-	NUTS_PASS(nng_close(s1));
-	NUTS_PASS(nng_close(s2));
+	NUTS_CLOSE(s1);
+	NUTS_CLOSE(s2);
 }
 
 static void
@@ -115,19 +116,20 @@ test_no_verify(void)
 	nng_msg     *msg;
 	nng_pipe     p;
 	bool         b;
-	uint16_t     port;
+	int          port;
 
 	NUTS_ENABLE_LOG(NNG_LOG_DEBUG);
-	NUTS_PASS(nng_pair_open(&s1));
-	NUTS_PASS(nng_pair_open(&s2));
+	NUTS_PASS(nng_pair1_open(&s1));
+	NUTS_PASS(nng_pair1_open(&s2));
 	NUTS_PASS(nng_socket_set_ms(s1, NNG_OPT_SENDTIMEO, 5000));
 	NUTS_PASS(nng_socket_set_ms(s2, NNG_OPT_RECVTIMEO, 5000));
 
 	port = nuts_next_port();
-	(void) snprintf(addr, sizeof(addr), "wss4://:%u/test", port);
+	(void) snprintf(addr, sizeof(addr), "wss4://:0/test");
 	NUTS_PASS(nng_listener_create(&l, s1, addr));
 	init_listener_wss_file(l);
 	NUTS_PASS(nng_listener_start(l, 0));
+	NUTS_PASS(nng_listener_get_int(l, NNG_OPT_TCP_BOUND_PORT, &port));
 
 	nng_msleep(100);
 	snprintf(addr, sizeof(addr), "wss://127.0.0.1:%u/test", port);
@@ -166,17 +168,18 @@ test_verify_works(void)
 	nng_msg     *msg;
 	nng_pipe     p;
 	bool         b;
-	uint16_t     port;
+	int          port;
 
-	NUTS_PASS(nng_pair_open(&s1));
-	NUTS_PASS(nng_pair_open(&s2));
+	NUTS_PASS(nng_pair1_open(&s1));
+	NUTS_PASS(nng_pair1_open(&s2));
 	NUTS_PASS(nng_socket_set_ms(s1, NNG_OPT_SENDTIMEO, 5000));
 	NUTS_PASS(nng_socket_set_ms(s2, NNG_OPT_RECVTIMEO, 5000));
 	port = nuts_next_port();
-	(void) snprintf(addr, sizeof(addr), "wss4://:%u/test", port);
+	(void) snprintf(addr, sizeof(addr), "wss4://:0/test");
 	NUTS_PASS(nng_listener_create(&l, s1, addr));
 	init_listener_wss_file(l);
 	NUTS_PASS(nng_listener_start(l, 0));
+	NUTS_PASS(nng_listener_get_int(l, NNG_OPT_TCP_BOUND_PORT, &port));
 
 	// It can take a bit for the listener to start up in clouds.
 	nng_msleep(200);
@@ -199,8 +202,8 @@ test_verify_works(void)
 	NUTS_TRUE(b == true);
 
 	nng_msg_free(msg);
-	NUTS_PASS(nng_close(s1));
-	NUTS_PASS(nng_close(s2));
+	NUTS_CLOSE(s1);
+	NUTS_CLOSE(s2);
 }
 
 static void
@@ -218,18 +221,18 @@ test_cert_file_not_present(void)
 static void
 test_tls_config(void)
 {
-	uint16_t        port = nuts_next_port();
 	nng_socket      s1;
 	nng_socket      s2;
 	nng_listener    l;
 	nng_dialer      d;
 	char            addr[40];
 	nng_tls_config *cfg;
+	int             port;
 
-	(void) snprintf(addr, sizeof(addr), "wss4://:%u/test", port);
+	(void) snprintf(addr, sizeof(addr), "wss4://:0/test");
 
-	NUTS_PASS(nng_pair_open(&s1));
-	NUTS_PASS(nng_pair_open(&s2));
+	NUTS_PASS(nng_pair1_open(&s1));
+	NUTS_PASS(nng_pair1_open(&s2));
 	NUTS_PASS(nng_listener_create(&l, s1, addr));
 	NUTS_PASS(nng_listener_get_tls(l, &cfg));
 	nng_tls_config_hold(cfg);
@@ -237,6 +240,7 @@ test_tls_config(void)
 
 	init_listener_wss_file(l);
 	NUTS_PASS(nng_listener_start(l, 0));
+	NUTS_PASS(nng_listener_get_int(l, NNG_OPT_TCP_BOUND_PORT, &port));
 
 	// make sure we cannot change the auth mode while running
 
@@ -267,8 +271,8 @@ test_tls_config(void)
 	NUTS_TRUE((rv == NNG_EPEERAUTH) || (rv == NNG_ECLOSED) ||
 	    (rv == NNG_ECRYPTO));
 
-	NUTS_PASS(nng_close(s1));
-	NUTS_PASS(nng_close(s2));
+	NUTS_CLOSE(s1);
+	NUTS_CLOSE(s2);
 }
 
 #endif

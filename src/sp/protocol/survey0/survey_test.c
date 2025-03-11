@@ -11,6 +11,11 @@
 #include "nng/nng.h"
 #include <nuts.h>
 
+#define SURVEYOR0_SELF 0x62
+#define SURVEYOR0_PEER 0x63
+#define SURVEYOR0_SELF_NAME "surveyor"
+#define SURVEYOR0_PEER_NAME "respondent"
+
 static void
 test_surv_identity(void)
 {
@@ -20,13 +25,13 @@ test_surv_identity(void)
 
 	NUTS_PASS(nng_surveyor0_open(&s));
 	NUTS_PASS(nng_socket_proto_id(s, &p));
-	NUTS_TRUE(p == NNG_SURVEYOR0_SELF);
+	NUTS_TRUE(p == SURVEYOR0_SELF);
 	NUTS_PASS(nng_socket_peer_id(s, &p));
-	NUTS_TRUE(p == NNG_SURVEYOR0_PEER); // 49
+	NUTS_TRUE(p == SURVEYOR0_PEER); // 49
 	NUTS_PASS(nng_socket_proto_name(s, &n));
-	NUTS_MATCH(n, NNG_SURVEYOR0_SELF_NAME);
+	NUTS_MATCH(n, SURVEYOR0_SELF_NAME);
 	NUTS_PASS(nng_socket_peer_name(s, &n));
-	NUTS_MATCH(n, NNG_SURVEYOR0_PEER_NAME);
+	NUTS_MATCH(n, SURVEYOR0_PEER_NAME);
 	NUTS_CLOSE(s);
 }
 
@@ -502,7 +507,7 @@ test_surv_ctx_recv_close_socket(void)
 	NUTS_PASS(nng_aio_result(aio));
 
 	nng_ctx_recv(ctx, aio);
-	nng_close(surv);
+	nng_socket_close(surv);
 
 	nng_aio_wait(aio);
 	NUTS_FAIL(nng_aio_result(aio), NNG_ECLOSED);
@@ -594,8 +599,8 @@ test_surv_validate_peer(void)
 	NUTS_TRUE(nng_stat_type(reject) == NNG_STAT_COUNTER);
 	NUTS_TRUE(nng_stat_value(reject) > 0);
 
-	NUTS_PASS(nng_close(s1));
-	NUTS_PASS(nng_close(s2));
+	NUTS_CLOSE(s1);
+	NUTS_CLOSE(s2);
 	nng_stats_free(stats);
 }
 

@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 //
 // This software is supplied under the terms of the MIT License, a
@@ -12,7 +12,6 @@
 
 #include "core/nng_impl.h"
 #include "core/pipe.h"
-#include "nng/protocol/pair0/pair.h"
 
 // Pair protocol.  The PAIR protocol is a simple 1:1 messaging pattern.
 // While a peer is connected to the server, all other peer connection
@@ -344,11 +343,6 @@ pair0_sock_send(void *arg, nni_aio *aio)
 	pair0_sock *s = arg;
 	nni_msg    *m;
 	size_t      len;
-	int         rv;
-
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
 
 	m   = nni_aio_get_msg(aio);
 	len = nni_msg_len(m);
@@ -378,8 +372,7 @@ pair0_sock_send(void *arg, nni_aio *aio)
 		return;
 	}
 
-	if ((rv = nni_aio_schedule(aio, pair0_cancel, s)) != 0) {
-		nni_aio_finish_error(aio, rv);
+	if (!nni_aio_start(aio, pair0_cancel, s)) {
 		nni_mtx_unlock(&s->mtx);
 		return;
 	}
@@ -393,11 +386,6 @@ pair0_sock_recv(void *arg, nni_aio *aio)
 	pair0_sock *s = arg;
 	pair0_pipe *p;
 	nni_msg    *m;
-	int         rv;
-
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
 
 	nni_mtx_lock(&s->mtx);
 	p = s->p;
@@ -434,11 +422,11 @@ pair0_sock_recv(void *arg, nni_aio *aio)
 		return;
 	}
 
-	if ((rv = nni_aio_schedule(aio, pair0_cancel, s)) != 0) {
-		nni_aio_finish_error(aio, rv);
-	} else {
-		nni_aio_list_append(&s->raq, aio);
+	if (!nni_aio_start(aio, pair0_cancel, s)) {
+		nni_mtx_unlock(&s->mtx);
+		return;
 	}
+	nni_aio_list_append(&s->raq, aio);
 	nni_mtx_unlock(&s->mtx);
 }
 

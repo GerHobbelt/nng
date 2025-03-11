@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 //
 // This software is supplied under the terms of the MIT License, a
@@ -12,7 +12,6 @@
 #include <string.h>
 
 #include "core/nng_impl.h"
-#include "nng/protocol/survey0/respond.h"
 
 // Respondent protocol.  The RESPONDENT protocol is the "replier" side of
 // the surveyor pattern.  This is useful for building service discovery, or
@@ -146,9 +145,6 @@ resp0_ctx_send(void *arg, nni_aio *aio)
 	uint32_t    pid;
 	int         rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
 	msg = nni_aio_get_msg(aio);
 	nni_msg_header_clear(msg);
 
@@ -158,9 +154,8 @@ resp0_ctx_send(void *arg, nni_aio *aio)
 	}
 
 	nni_mtx_lock(&s->mtx);
-	if ((rv = nni_aio_schedule(aio, resp0_ctx_cancel_send, ctx)) != 0) {
+	if (!nni_aio_start(aio, resp0_ctx_cancel_send, ctx)) {
 		nni_mtx_unlock(&s->mtx);
-		nni_aio_finish_error(aio, rv);
 		return;
 	}
 
@@ -426,16 +421,10 @@ resp0_ctx_recv(void *arg, nni_aio *aio)
 	size_t      len;
 	nni_msg    *msg;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
 	nni_mtx_lock(&s->mtx);
 	if ((p = nni_list_first(&s->recvpipes)) == NULL) {
-		int rv;
-		rv = nni_aio_schedule(aio, resp0_cancel_recv, ctx);
-		if (rv != 0) {
+		if (!nni_aio_start(aio, resp0_cancel_recv, ctx)) {
 			nni_mtx_unlock(&s->mtx);
-			nni_aio_finish_error(aio, rv);
 			return;
 		}
 		// We cannot have two concurrent receive requests on the same

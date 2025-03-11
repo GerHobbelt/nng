@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 // Copyright 2019 Nathan Kent <nate@nkent.net>
 //
@@ -13,8 +13,6 @@
 #include <string.h>
 
 #include "core/nng_impl.h"
-#include "core/socket.h"
-#include "nng/protocol/pubsub0/sub.h"
 
 // Subscriber protocol.  The SUB protocol receives messages sent to
 // it from publishers, and filters out those it is not interested in,
@@ -97,18 +95,12 @@ sub0_ctx_recv(void *arg, nni_aio *aio)
 	sub0_sock *sock = ctx->sock;
 	nni_msg   *msg;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
-
 	nni_mtx_lock(&sock->lk);
 
 again:
 	if (nni_lmq_empty(&ctx->lmq)) {
-		int rv;
-		if ((rv = nni_aio_schedule(aio, sub0_ctx_cancel, ctx)) != 0) {
+		if (!nni_aio_start(aio, sub0_ctx_cancel, ctx)) {
 			nni_mtx_unlock(&sock->lk);
-			nni_aio_finish_error(aio, rv);
 			return;
 		}
 		nni_list_append(&ctx->recv_queue, aio);
@@ -133,9 +125,7 @@ static void
 sub0_ctx_send(void *arg, nni_aio *aio)
 {
 	NNI_ARG_UNUSED(arg);
-	if (nni_aio_begin(aio) == 0) {
-		nni_aio_finish_error(aio, NNG_ENOTSUP);
-	}
+	nni_aio_finish_error(aio, NNG_ENOTSUP);
 }
 
 static void
@@ -590,9 +580,7 @@ static void
 sub0_sock_send(void *arg, nni_aio *aio)
 {
 	NNI_ARG_UNUSED(arg);
-	if (nni_aio_begin(aio) == 0) {
-		nni_aio_finish_error(aio, NNG_ENOTSUP);
-	}
+	nni_aio_finish_error(aio, NNG_ENOTSUP);
 }
 
 static void

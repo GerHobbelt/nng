@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 //
 // This software is supplied under the terms of the MIT License, a
 // copy of which should be located in the distribution where this
@@ -14,6 +14,11 @@
 
 #define SECOND 1000
 
+#define BUS0_SELF 0x70
+#define BUS0_PEER 0x70
+#define BUS0_SELF_NAME "bus"
+#define BUS0_PEER_NAME "bus"
+
 void
 test_bus_identity(void)
 {
@@ -23,13 +28,13 @@ test_bus_identity(void)
 
 	NUTS_PASS(nng_bus0_open(&s));
 	NUTS_PASS(nng_socket_proto_id(s, &p));
-	NUTS_TRUE(p == NNG_BUS0_SELF);
+	NUTS_TRUE(p == BUS0_SELF);
 	NUTS_PASS(nng_socket_peer_id(s, &p));
-	NUTS_TRUE(p == NNG_BUS0_PEER); // 49
+	NUTS_TRUE(p == BUS0_PEER); // 49
 	NUTS_PASS(nng_socket_proto_name(s, &n));
-	NUTS_MATCH(n, NNG_BUS0_SELF_NAME);
+	NUTS_MATCH(n, BUS0_SELF_NAME);
 	NUTS_PASS(nng_socket_peer_name(s, &n));
-	NUTS_MATCH(n, NNG_BUS0_PEER_NAME);
+	NUTS_MATCH(n, BUS0_PEER_NAME);
 	NUTS_CLOSE(s);
 }
 
@@ -179,24 +184,28 @@ static void
 test_bus_aio_stopped(void)
 {
 	nng_socket s1;
-	nng_aio   *aio;
+	nng_aio   *aio1;
+	nng_aio   *aio2;
 	nng_msg   *msg;
 
 	NUTS_PASS(nng_bus0_open(&s1));
 	NUTS_PASS(nng_msg_alloc(&msg, 0));
-	NUTS_PASS(nng_aio_alloc(&aio, NULL, NULL));
-	nng_aio_stop(aio);
+	NUTS_PASS(nng_aio_alloc(&aio1, NULL, NULL));
+	NUTS_PASS(nng_aio_alloc(&aio2, NULL, NULL));
+	nng_aio_stop(aio1);
+	nng_aio_stop(aio2);
 
-	nng_recv_aio(s1, aio);
-	nng_aio_wait(aio);
-	NUTS_FAIL(nng_aio_result(aio), NNG_ESTOPPED);
+	nng_recv_aio(s1, aio1);
+	nng_aio_wait(aio1);
+	NUTS_FAIL(nng_aio_result(aio1), NNG_ESTOPPED);
 
-	nng_aio_set_msg(aio, msg);
-	nng_send_aio(s1, aio);
-	nng_aio_wait(aio);
-	NUTS_FAIL(nng_aio_result(aio), NNG_ESTOPPED);
+	nng_aio_set_msg(aio2, msg);
+	nng_send_aio(s1, aio2);
+	nng_aio_wait(aio2);
+	NUTS_FAIL(nng_aio_result(aio2), NNG_ESTOPPED);
 
-	nng_aio_free(aio);
+	nng_aio_free(aio1);
+	nng_aio_free(aio2);
 	nng_msg_free(msg);
 	NUTS_CLOSE(s1);
 }
@@ -374,7 +383,7 @@ test_bus_cooked(void)
 	NUTS_PASS(nng_bus0_open(&s));
 	NUTS_PASS(nng_socket_raw(s, &b));
 	NUTS_TRUE(!b);
-	NUTS_PASS(nng_close(s));
+	NUTS_CLOSE(s);
 
 	// raw pub only differs in the option setting
 	NUTS_PASS(nng_bus0_open_raw(&s));

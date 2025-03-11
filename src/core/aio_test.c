@@ -155,7 +155,7 @@ test_consumer_cancel(void)
 	NUTS_TRUE(nng_aio_result(a) == NNG_ECANCELED);
 
 	nng_aio_free(a);
-	NUTS_TRUE(nng_close(s1) == 0);
+	NUTS_CLOSE(s1);
 }
 
 void
@@ -207,8 +207,8 @@ test_traffic(void)
 
 	nng_aio_free(rx_aio);
 	nng_aio_free(tx_aio);
-	NUTS_PASS(nng_close(s1));
-	NUTS_PASS(nng_close(s2));
+	NUTS_CLOSE(s1);
+	NUTS_CLOSE(s2);
 }
 
 void
@@ -226,7 +226,7 @@ test_explicit_timeout(void)
 	NUTS_TRUE(done == 1);
 	NUTS_FAIL(nng_aio_result(a), NNG_ETIMEDOUT);
 	nng_aio_free(a);
-	NUTS_PASS(nng_close(s));
+	NUTS_CLOSE(s);
 }
 
 void
@@ -247,7 +247,7 @@ test_explicit_expiration(void)
 	NUTS_TRUE(done == 1);
 	NUTS_FAIL(nng_aio_result(a), NNG_ETIMEDOUT);
 	nng_aio_free(a);
-	NUTS_PASS(nng_close(s));
+	NUTS_CLOSE(s);
 }
 
 void
@@ -265,7 +265,7 @@ test_inherited_timeout(void)
 	NUTS_TRUE(done == 1);
 	NUTS_FAIL(nng_aio_result(a), NNG_ETIMEDOUT);
 	nng_aio_free(a);
-	NUTS_PASS(nng_close(s));
+	NUTS_CLOSE(s);
 }
 
 void
@@ -283,7 +283,7 @@ test_zero_timeout(void)
 	NUTS_TRUE(done == 1);
 	NUTS_FAIL(nng_aio_result(a), NNG_ETIMEDOUT);
 	nng_aio_free(a);
-	NUTS_PASS(nng_close(s));
+	NUTS_CLOSE(s);
 }
 
 static void
@@ -435,6 +435,23 @@ test_aio_busy(void)
 	NUTS_ASSERT(!nng_aio_busy(aio));
 	nng_aio_free(aio);
 }
+void
+test_aio_scatter_gather_too_many(void)
+{
+	nng_aio *aio;
+	nng_iov  iov[32];
+
+	NUTS_PASS(nng_aio_alloc(&aio, NULL, NULL));
+
+	for (int i = 0; i < 32; i++) {
+		iov[i].iov_buf = "abc";
+		iov[i].iov_len = 3;
+	}
+
+	NUTS_FAIL(nng_aio_set_iov(aio, 32, iov), NNG_EINVAL);
+
+	nng_aio_free(aio);
+}
 
 NUTS_TESTS = {
 	{ "sleep", test_sleep },
@@ -453,5 +470,6 @@ NUTS_TESTS = {
 	{ "sleep loop", test_sleep_loop },
 	{ "sleep cancel", test_sleep_cancel },
 	{ "aio busy", test_aio_busy },
+	{ "scatter gather too many", test_aio_scatter_gather_too_many },
 	{ NULL, NULL },
 };

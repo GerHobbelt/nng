@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 //
 // This software is supplied under the terms of the MIT License, a
@@ -149,17 +149,11 @@ struct nng_sockaddr_in6 {
 	uint8_t  sa_addr[16];
 	uint32_t sa_scope;
 };
+
 struct nng_sockaddr_in {
 	uint16_t sa_family;
 	uint16_t sa_port;
 	uint32_t sa_addr;
-};
-
-struct nng_sockaddr_zt {
-	uint16_t sa_family;
-	uint64_t sa_nwid;
-	uint64_t sa_nodeid;
-	uint32_t sa_port;
 };
 
 struct nng_sockaddr_abstract {
@@ -181,7 +175,6 @@ typedef struct nng_sockaddr_path     nng_sockaddr_path;
 typedef struct nng_sockaddr_path     nng_sockaddr_ipc;
 typedef struct nng_sockaddr_in       nng_sockaddr_in;
 typedef struct nng_sockaddr_in6      nng_sockaddr_in6;
-typedef struct nng_sockaddr_zt       nng_sockaddr_zt;
 typedef struct nng_sockaddr_abstract nng_sockaddr_abstract;
 typedef struct nng_sockaddr_storage  nng_sockaddr_storage;
 
@@ -191,7 +184,6 @@ typedef union nng_sockaddr {
 	nng_sockaddr_inproc   s_inproc;
 	nng_sockaddr_in6      s_in6;
 	nng_sockaddr_in       s_in;
-	nng_sockaddr_zt       s_zt;
 	nng_sockaddr_abstract s_abstract;
 	nng_sockaddr_storage  s_storage;
 } nng_sockaddr;
@@ -202,8 +194,7 @@ enum nng_sockaddr_family {
 	NNG_AF_IPC      = 2,
 	NNG_AF_INET     = 3,
 	NNG_AF_INET6    = 4,
-	NNG_AF_ZT       = 5, // ZeroTier
-	NNG_AF_ABSTRACT = 6
+	NNG_AF_ABSTRACT = 5
 };
 
 // Scatter/gather I/O.
@@ -217,10 +208,10 @@ typedef struct nng_iov {
 #define NNG_DURATION_DEFAULT (-2)
 #define NNG_DURATION_ZERO (0)
 
-// nng_close closes the socket, terminating all activity and
+// nng_socket_close closes the socket, terminating all activity and
 // closing any underlying connections and releasing any associated
 // resources.
-NNG_DECL int nng_close(nng_socket);
+NNG_DECL int nng_socket_close(nng_socket);
 
 // nng_socket_id returns the positive socket id for the socket, or -1
 // if the socket is not valid.
@@ -280,6 +271,7 @@ uint32_t nng_sockaddr_port(const nng_sockaddr *sa);
 // Only one callback can be set on a given socket, and there is no way
 // to retrieve the old value.
 typedef enum {
+	NNG_PIPE_EV_NONE,     // Used internally, must be first, never posted
 	NNG_PIPE_EV_ADD_PRE,  // Called just before pipe added to socket
 	NNG_PIPE_EV_ADD_POST, // Called just after pipe added to socket
 	NNG_PIPE_EV_REM_POST, // Called just after pipe removed from socket
@@ -443,8 +435,9 @@ NNG_DECL void nng_recv_aio(nng_socket, nng_aio *);
 // without resorting to raw mode sockets.  See the protocol specific
 // documentation for further details.  (Note that at this time, only
 // asynchronous send/recv are supported for contexts, but its easy enough
-// to make synchronous versions with nng_aio_wait().)  Note that nng_close
-// of the parent socket will *block* as long as any contexts are open.
+// to make synchronous versions with nng_aio_wait().)  Note that
+// nng_socket_close of the parent socket will *block* as long as any contexts
+// are open.
 
 // nng_ctx_open creates a context.  This returns NNG_ENOTSUP if the
 // protocol implementation does not support separate contexts.
@@ -902,6 +895,13 @@ NNG_DECL nng_listener nng_pipe_listener(nng_pipe);
 // are not supported.
 #define NNG_OPT_SOCKET_FD "socket:fd"
 
+// NNG_OPT_LISTEN_FD is a write-only integer property that can be used
+// with some transports to pass a file descriptor that is already listening
+// for inbound connections.  The transport will then call accept on it.
+// The file descriptor has to be of a suitable type.  The intended use
+// for this is socket activation.  Not all transports support this.
+#define NNG_OPT_LISTEN_FD "listen-fd"
+
 // XXX: TBD: priorities, ipv4only
 
 // Statistics. These are for informational purposes only, and subject
@@ -1113,19 +1113,19 @@ NNG_DECL uint32_t nng_url_port(const nng_url *);
 NNG_DECL void nng_url_resolve_port(nng_url *url, uint32_t port);
 
 // hostname part of URL, can be NULL if irerelvant to scheme
-const char *nng_url_hostname(const nng_url *);
+NNG_DECL const char *nng_url_hostname(const nng_url *);
 
 // user info part (thing before '@') of URL, NULL if absent.
-const char *nng_url_userinfo(const nng_url *);
+NNG_DECL const char *nng_url_userinfo(const nng_url *);
 
 // path portion of URL, will always non-NULL, but may be empty.
-const char *nng_url_path(const nng_url *);
+NNG_DECL const char *nng_url_path(const nng_url *);
 
 // query info part of URL, not including '?, NULL if absent'
-const char *nng_url_query(const nng_url *);
+NNG_DECL const char *nng_url_query(const nng_url *);
 
 // fragment part of URL, not including '#', NULL if absent.
-const char *nng_url_fragment(const nng_url *);
+NNG_DECL const char *nng_url_fragment(const nng_url *);
 
 // nng_version returns the library version as a human readable string.
 NNG_DECL const char *nng_version(void);
@@ -1607,6 +1607,98 @@ NNG_DECL int nng_tls_config_psk(
 // for TLS 1.3) then NNG_ENOTSUP will be returned.
 NNG_DECL int nng_tls_config_version(
     nng_tls_config *, nng_tls_version, nng_tls_version);
+
+// Protocol specific values.  These were formerly located in protocol specific
+// headers, but we are bringing them here for ease of use.
+
+// BUS0
+NNG_DECL int nng_bus0_open(nng_socket *);
+NNG_DECL int nng_bus0_open_raw(nng_socket *);
+
+// PAIR0
+NNG_DECL int nng_pair0_open(nng_socket *);
+NNG_DECL int nng_pair0_open_raw(nng_socket *);
+
+// PAIR1
+NNG_DECL int nng_pair1_open(nng_socket *);
+NNG_DECL int nng_pair1_open_raw(nng_socket *);
+NNG_DECL int nng_pair1_open_poly(nng_socket *);
+#define NNG_OPT_PAIR1_POLY "pair1:polyamorous"
+
+// PIPELINE0
+NNG_DECL int nng_pull0_open(nng_socket *);
+NNG_DECL int nng_pull0_open_raw(nng_socket *);
+NNG_DECL int nng_push0_open(nng_socket *);
+NNG_DECL int nng_push0_open_raw(nng_socket *);
+
+// PUBSUB0
+NNG_DECL int nng_pub0_open(nng_socket *);
+NNG_DECL int nng_pub0_open_raw(nng_socket *);
+NNG_DECL int nng_sub0_open(nng_socket *);
+NNG_DECL int nng_sub0_open_raw(nng_socket *);
+NNG_DECL int nng_sub0_socket_subscribe(
+    nng_socket id, const void *buf, size_t sz);
+NNG_DECL int nng_sub0_socket_unsubscribe(
+    nng_socket id, const void *buf, size_t sz);
+NNG_DECL int nng_sub0_ctx_subscribe(nng_ctx id, const void *buf, size_t sz);
+NNG_DECL int nng_sub0_ctx_unsubscribe(nng_ctx id, const void *buf, size_t sz);
+#define NNG_OPT_SUB_PREFNEW "sub:prefnew"
+
+// REQREP0
+NNG_DECL int nng_rep0_open(nng_socket *);
+NNG_DECL int nng_rep0_open_raw(nng_socket *);
+NNG_DECL int nng_req0_open(nng_socket *);
+NNG_DECL int nng_req0_open_raw(nng_socket *);
+#define NNG_OPT_REQ_RESENDTIME "req:resend-time"
+#define NNG_OPT_REQ_RESENDTICK "req:resend-tick"
+
+// SURVEY0
+NNG_DECL int nng_respondent0_open(nng_socket *);
+NNG_DECL int nng_respondent0_open_raw(nng_socket *);
+NNG_DECL int nng_surveyor0_open(nng_socket *);
+NNG_DECL int nng_surveyor0_open_raw(nng_socket *);
+#define NNG_OPT_SURVEYOR_SURVEYTIME "surveyor:survey-time"
+
+// These transition macros may help with migration from NNG1.
+// Applications should try to avoid depending on these any longer than
+// necessary, as they may be removed in a future update.  This is far from a
+// sufficient set for a transition.
+#ifdef NNG1_TRANSITION
+#define nng_nop() \
+	do {      \
+	} while (0)
+#define nng_close(s) nng_socket_close(s)
+#define nng_inproc_register() nng_nop()
+#define nng_ipc_register() nng_nop()
+#define nng_tls_register() nng_nop()
+#define nng_ws_register() nng_nop()
+#define nng_wss_register() nng_nop()
+#define nng_zt_register() nng_nop()
+
+// protocol "wrappers" -- applications should just be using the version
+// specific macros
+#define nng_bus_open nng_bus0_open
+#define nng_bus_open_raw nng_bus0_open_raw
+#define nng_pair_open nng_pair1_open
+#define nng_pair_open_raw nng_pair1_open_raw
+#define nng_pull_open nng_pull0_open
+#define nng_pull_open_raw nng_pull0_open_raw
+#define nng_push_open nng_push0_open
+#define nng_push_open_raw nng_push0_open_raw
+#define nng_pub_open nng_pub0_open
+#define nng_pub_open_raw nng_pub0_open_raw
+#define nng_sub_open nng_sub0_open
+#define nng_sub_open_raw nng_sub0_open_raw
+#define nng_rep_open nng_rep0_open
+#define nng_rep_open_raw nng_rep0_open_raw
+#define nng_req_open nng_req0_open
+#define nng_req_open_raw nng_req0_open_raw
+#define nng_respondent_open nng_respondent0_open
+#define nng_respondent_open_raw nng_respondent0_open_raw
+#define nng_surveyor_open nng_surveyor0_open
+#define nng_surveyor_open_raw nng_surveyor0_open_raw
+
+#endif // NNG1_TRANSITION
 
 #ifdef __cplusplus
 }

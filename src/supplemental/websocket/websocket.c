@@ -14,10 +14,10 @@
 #include <string.h>
 
 #include "core/nng_impl.h"
-#include "supplemental/base64/base64.h"
 #include "supplemental/http/http_api.h"
-#include "supplemental/sha1/sha1.h"
 
+#include "base64.h"
+#include "sha1.h"
 #include "websocket.h"
 
 // This should be removed or handled differently in the future.

@@ -214,12 +214,13 @@ struct udp_ep {
 	nni_list      connaios;   // aios from accept waiting for a client peer
 	nni_list      connpipes;  // pipes waiting to be connected
 	nng_duration  refresh; // refresh interval for connections in seconds
-	udp_sp_msg    rx_msg;  // contains the received message header
+	udp_sp_msg   *rx_msg;  // contains the received message header
 	uint16_t      rcvmax;  // max payload, trimmed to uint16_t
 	uint16_t      copymax;
 	udp_txring    tx_ring;
 	nni_time      next_wake;
 	nni_aio_completions complq;
+	nni_resolv_item     resolv;
 
 	nni_stat_item st_rcv_max;
 	nni_stat_item st_rcv_reorder;
@@ -384,14 +385,20 @@ udp_pipe_schedule(udp_pipe *p)
 static void
 udp_start_rx(udp_ep *ep)
 {
-	nni_iov iov[2];
+	nni_iov iov;
 
-	iov[0].iov_buf = &ep->rx_msg;
-	iov[0].iov_len = sizeof(ep->rx_msg);
-	iov[1].iov_buf = nni_msg_body(ep->rx_payload);
-	iov[1].iov_len = nni_msg_len(ep->rx_payload);
+	// We use this trick to collect the message header so that we can
+	// do the entire message in a single iov, which avoids the need to
+	// scatter/gather (which can be problematic for platforms that cannot
+	// do scatter/gather due to missing recvmsg.)
+	(void) nni_msg_insert(ep->rx_payload, NULL, sizeof(udp_sp_msg));
+	iov.iov_buf = nni_msg_body(ep->rx_payload);
+	iov.iov_len = nni_msg_len(ep->rx_payload);
+	ep->rx_msg  = nni_msg_body(ep->rx_payload);
+	nni_msg_trim(ep->rx_payload, sizeof(udp_sp_msg));
+
 	nni_aio_set_input(&ep->rx_aio, 0, &ep->rx_sa);
-	nni_aio_set_iov(&ep->rx_aio, 2, iov);
+	nni_aio_set_iov(&ep->rx_aio, 1, &iov);
 	nni_udp_recv(ep->udp, &ep->rx_aio);
 }
 
@@ -677,8 +684,7 @@ udp_recv_data(udp_ep *ep, udp_sp_data *dreq, size_t len, nng_sockaddr *sa)
 		nni_stat_inc(&ep->st_rcv_nocopy, 1);
 		// Message size larger than copy break, do zero copy
 		msg = ep->rx_payload;
-		if (nng_msg_alloc(&ep->rx_payload,
-		        ep->rcvmax + sizeof(ep->rx_msg)) != 0) {
+		if (nng_msg_alloc(&ep->rx_payload, ep->rcvmax) != 0) {
 			ep->rx_payload = msg; // make sure we put it back
 			if (p->npipe != NULL) {
 				nni_pipe_bump_error(p->npipe, NNG_ENOMEM);
@@ -891,7 +897,7 @@ udp_rx_cb(void *arg)
 	}
 
 	// Received message will be in the ep rx header.
-	hdr = &ep->rx_msg;
+	hdr = ep->rx_msg;
 	sa  = &ep->rx_sa;
 	n   = nng_aio_count(aio);
 
@@ -956,14 +962,6 @@ udp_pipe_send(void *arg, nni_aio *aio)
 	nng_msg    *msg;
 	size_t      count = 0;
 
-	if (nni_aio_begin(aio) != 0) {
-		// No way to give the message back to the  protocol,
-		// so we just discard it silently to prevent it from leaking.
-		nni_msg_free(nni_aio_get_msg(aio));
-		nni_aio_set_msg(aio, NULL);
-		return;
-	}
-
 	msg = nni_aio_get_msg(aio);
 	ep  = p->ep;
 
@@ -971,6 +969,7 @@ udp_pipe_send(void *arg, nni_aio *aio)
 		count = nni_msg_len(msg) + nni_msg_header_len(msg);
 	}
 
+	nni_aio_reset(aio);
 	nni_mtx_lock(&ep->mtx);
 	if ((nni_msg_len(msg) + nni_msg_header_len(msg)) > p->sndmax) {
 		nni_mtx_unlock(&ep->mtx);
@@ -1020,20 +1019,16 @@ udp_pipe_recv(void *arg, nni_aio *aio)
 {
 	udp_pipe *p  = arg;
 	udp_ep   *ep = p->ep;
-	int       rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 	nni_mtx_lock(&ep->mtx);
 	if (p->closed) {
 		nni_mtx_unlock(&ep->mtx);
 		nni_aio_finish_error(aio, NNG_ECLOSED);
 		return;
 	}
-	if ((rv = nni_aio_schedule(aio, udp_pipe_recv_cancel, p)) != 0) {
+	if (!nni_aio_start(aio, udp_pipe_recv_cancel, p)) {
 		nni_mtx_unlock(&ep->mtx);
-		nni_aio_finish_error(aio, rv);
 		return;
 	}
 
@@ -1291,8 +1286,7 @@ udp_ep_init(
 	ep->refresh          = NNG_UDP_REFRESH; // one minute by default
 	ep->rcvmax           = NNG_UDP_RECVMAX;
 	ep->copymax          = NNG_UDP_COPYMAX;
-	if ((rv = nni_msg_alloc(&ep->rx_payload,
-	              ep->rcvmax + sizeof(ep->rx_msg)) != 0)) {
+	if ((rv = nni_msg_alloc(&ep->rx_payload, ep->rcvmax) != 0)) {
 		NNI_FREE_STRUCTS(ep->tx_ring.descs, NNG_UDP_TXQUEUE_LEN);
 		return (rv);
 	}
@@ -1540,9 +1534,14 @@ udp_ep_connect(void *arg, nni_aio *aio)
 
 	// lookup the IP address
 
+	memset(&ep->resolv, 0, sizeof(ep->resolv));
+	ep->resolv.ri_family  = ep->af;
+	ep->resolv.ri_host    = ep->url->u_hostname;
+	ep->resolv.ri_port    = ep->url->u_port;
+	ep->resolv.ri_passive = false;
+	ep->resolv.ri_sa      = &ep->peer_sa;
 	nni_aio_set_timeout(&ep->resaio, NNI_SECOND * 5);
-	nni_resolv_ip(ep->url->u_hostname, ep->url->u_port, ep->af, false,
-	    &ep->peer_sa, &ep->resaio);
+	nni_resolv(&ep->resolv, &ep->resaio);
 
 	// wake up for retries
 	nni_aio_abort(&ep->timeaio, NNG_EINTR);
@@ -1740,20 +1739,16 @@ static void
 udp_ep_accept(void *arg, nni_aio *aio)
 {
 	udp_ep *ep = arg;
-	int     rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 	nni_mtx_lock(&ep->mtx);
 	if (ep->closed) {
 		nni_mtx_unlock(&ep->mtx);
 		nni_aio_finish_error(aio, NNG_ECLOSED);
 		return;
 	}
-	if ((rv = nni_aio_schedule(aio, udp_ep_cancel, ep)) != 0) {
+	if (!nni_aio_start(aio, udp_ep_cancel, ep)) {
 		nni_mtx_unlock(&ep->mtx);
-		nni_aio_finish_error(aio, rv);
 		return;
 	}
 	nni_aio_list_append(&ep->connaios, aio);
