@@ -280,15 +280,14 @@ nng_http_req_get_uri(const nng_http_req *req)
 #endif
 }
 
-int
+void
 nng_http_req_set_method(nng_http_req *req, const char *meth)
 {
 #ifdef NNG_SUPP_HTTP
-	return (nni_http_req_set_method(req, meth));
+	nni_http_req_set_method(req, meth);
 #else
 	NNI_ARG_UNUSED(req);
 	NNI_ARG_UNUSED(meth);
-	return (NNG_ENOTSUP);
 #endif
 }
 
@@ -349,15 +348,14 @@ nng_http_res_get_reason(const nng_http_res *res)
 #endif
 }
 
-int
+void
 nng_http_res_set_status(nng_http_res *res, uint16_t status)
 {
 #ifdef NNG_SUPP_HTTP
-	return (nni_http_res_set_status(res, status));
+	nni_http_res_set_status(res, status);
 #else
 	NNI_ARG_UNUSED(res);
 	NNI_ARG_UNUSED(status);
-	return (NNG_ENOTSUP);
 #endif
 }
 
@@ -585,76 +583,69 @@ nng_http_handler_alloc_static(nng_http_handler **hp, const char *uri,
 #endif
 }
 
-int
+void
 nng_http_handler_set_method(nng_http_handler *h, const char *meth)
 {
 #ifdef NNG_SUPP_HTTP
-	return (nni_http_handler_set_method(h, meth));
+	nni_http_handler_set_method(h, meth);
 #else
 	NNI_ARG_UNUSED(h);
 	NNI_ARG_UNUSED(meth);
-	return (NNG_ENOTSUP);
 #endif
 }
 
-int
+void
 nng_http_handler_collect_body(nng_http_handler *h, bool want, size_t len)
 {
 #ifdef NNG_SUPP_HTTP
 	nni_http_handler_collect_body(h, want, len);
-	return (0);
 #else
 	NNI_ARG_UNUSED(h);
 	NNI_ARG_UNUSED(want);
 	NNI_ARG_UNUSED(len);
-	return (NNG_ENOTSUP);
 #endif
 }
 
-int
+void
 nng_http_handler_set_host(nng_http_handler *h, const char *host)
 {
 #ifdef NNG_SUPP_HTTP
-	return (nni_http_handler_set_host(h, host));
+	nni_http_handler_set_host(h, host);
 #else
 	NNI_ARG_UNUSED(h);
 	NNI_ARG_UNUSED(host);
-	return (NNG_ENOTSUP);
 #endif
 }
 
-int
+void
 nng_http_handler_set_tree(nng_http_handler *h)
 {
 #ifdef NNG_SUPP_HTTP
-	return (nni_http_handler_set_tree(h));
+	nni_http_handler_set_tree(h);
 #else
 	NNI_ARG_UNUSED(h);
-	return (NNG_ENOTSUP);
 #endif
 }
 
-int
+void
 nng_http_handler_set_tree_exclusive(nng_http_handler *h)
 {
 #ifdef NNG_SUPP_HTTP
-	return (nni_http_handler_set_tree_exclusive(h));
+	nni_http_handler_set_tree_exclusive(h);
 #else
 	NNI_ARG_UNUSED(h);
-	return (NNG_ENOTSUP);
 #endif
 }
 
-int
+void
 nng_http_handler_set_data(nng_http_handler *h, void *dat, void (*dtor)(void *))
 {
 #ifdef NNG_SUPP_HTTP
-	return (nni_http_handler_set_data(h, dat, dtor));
+	nni_http_handler_set_data(h, dat, dtor);
 #else
 	NNI_ARG_UNUSED(h);
 	NNI_ARG_UNUSED(dat);
 	NNI_ARG_UNUSED(dtor);
-	return (NNG_ENOTSUP);
 #endif
 }
 

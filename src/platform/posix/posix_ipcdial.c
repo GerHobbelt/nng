@@ -41,6 +41,7 @@ ipc_dialer_close(void *arg)
 				c->dial_aio = NULL;
 				nni_aio_set_prov_data(aio, NULL);
 				nng_stream_close(&c->stream);
+				nng_stream_stop(&c->stream);
 				nng_stream_free(&c->stream);
 			}
 			nni_aio_finish_error(aio, NNG_ECLOSED);
@@ -50,8 +51,16 @@ ipc_dialer_close(void *arg)
 }
 
 static void
-ipc_dialer_fini(ipc_dialer *d)
+ipc_dialer_stop(void *arg)
 {
+	nni_ipc_dialer *d = arg;
+	ipc_dialer_close(d);
+}
+
+static void
+ipc_dialer_fini(void *arg)
+{
+	ipc_dialer *d = arg;
 	nni_mtx_fini(&d->mtx);
 	NNI_FREE_STRUCT(d);
 }
@@ -61,19 +70,15 @@ ipc_dialer_free(void *arg)
 {
 	ipc_dialer *d = arg;
 
-	ipc_dialer_close(d);
-	nni_atomic_set_bool(&d->fini, true);
+	ipc_dialer_stop(d);
+
 	nni_posix_ipc_dialer_rele(d);
 }
 
 void
 nni_posix_ipc_dialer_rele(ipc_dialer *d)
 {
-	if (((nni_atomic_dec_nv(&d->ref)) != 0) ||
-	    (!nni_atomic_get_bool(&d->fini))) {
-		return;
-	}
-	ipc_dialer_fini(d);
+	nni_refcnt_rele(&d->ref);
 }
 
 static void
@@ -94,11 +99,12 @@ ipc_dialer_cancel(nni_aio *aio, void *arg, int rv)
 	nni_mtx_unlock(&d->mtx);
 
 	nni_aio_finish_error(aio, rv);
+	nng_stream_stop(&c->stream);
 	nng_stream_free(&c->stream);
 }
 
-static void
-ipc_dialer_cb(nni_posix_pfd *pfd, unsigned ev, void *arg)
+void
+nni_posix_ipc_dialer_cb(void *arg, unsigned ev)
 {
 	nni_ipc_conn   *c = arg;
 	nni_ipc_dialer *d = c->dialer;
@@ -117,7 +123,7 @@ ipc_dialer_cb(nni_posix_pfd *pfd, unsigned ev, void *arg)
 
 	} else {
 		socklen_t sz = sizeof(int);
-		int       fd = nni_posix_pfd_fd(pfd);
+		int       fd = nni_posix_pfd_fd(&c->pfd);
 		if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &rv, &sz) < 0) {
 			rv = errno;
 		}
@@ -138,12 +144,12 @@ ipc_dialer_cb(nni_posix_pfd *pfd, unsigned ev, void *arg)
 
 	if (rv != 0) {
 		nng_stream_close(&c->stream);
+		nng_stream_stop(&c->stream);
 		nng_stream_free(&c->stream);
 		nni_aio_finish_error(aio, rv);
 		return;
 	}
 
-	nni_posix_ipc_start(c);
 	nni_aio_set_output(aio, 0, c);
 	nni_aio_finish(aio, 0, 0);
 }
@@ -161,9 +167,7 @@ ipc_dialer_dial(void *arg, nni_aio *aio)
 	int                     fd;
 	int                     rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 
 	if (((len = nni_posix_nn2sockaddr(&ss, &d->sa)) == 0) ||
 	    (ss.ss_family != AF_UNIX)) {
@@ -176,34 +180,27 @@ ipc_dialer_dial(void *arg, nni_aio *aio)
 		return;
 	}
 
-	nni_atomic_inc(&d->ref);
-
-	if ((rv = nni_posix_ipc_alloc(&c, &d->sa, d)) != 0) {
+	if ((rv = nni_posix_ipc_alloc(&c, &d->sa, d, fd)) != 0) {
 		(void) close(fd);
-		nni_posix_ipc_dialer_rele(d);
 		nni_aio_finish_error(aio, rv);
 		return;
 	}
 
-	// This arranges for the fd to be in non-blocking mode, and adds the
-	// poll fd to the list.
-	if ((rv = nni_posix_pfd_init(&pfd, fd)) != 0) {
-		// the error label unlocks this
-		nni_mtx_lock(&d->mtx);
-		goto error;
-	}
-
-	nni_posix_ipc_init(c, pfd);
-	nni_posix_pfd_set_cb(pfd, ipc_dialer_cb, c);
+	// hold for the conn
+	nni_refcnt_hold(&d->ref);
 
 	nni_mtx_lock(&d->mtx);
+	if (!nni_aio_start(aio, ipc_dialer_cancel, d)) {
+		nni_mtx_unlock(&d->mtx);
+		nng_stream_free(&c->stream);
+		return;
+	}
+
 	if (d->closed) {
 		rv = NNG_ECLOSED;
 		goto error;
 	}
-	if ((rv = nni_aio_schedule(aio, ipc_dialer_cancel, d)) != 0) {
-		goto error;
-	}
+	c->dial_aio = aio;
 	if (connect(fd, (void *) &ss, len) != 0) {
 		if (errno != EINPROGRESS && errno != EAGAIN) {
 			if (errno == ENOENT) {
@@ -218,7 +215,7 @@ ipc_dialer_dial(void *arg, nni_aio *aio)
 		if ((rv = nni_posix_pfd_arm(pfd, NNI_POLL_OUT)) != 0) {
 			goto error;
 		}
-		c->dial_aio = aio;
+		c->dial_aio = NULL;
 		nni_aio_set_prov_data(aio, c);
 		nni_list_append(&d->connq, aio);
 		nni_mtx_unlock(&d->mtx);
@@ -226,16 +223,18 @@ ipc_dialer_dial(void *arg, nni_aio *aio)
 	}
 	// Immediate connect, cool!  This probably only happens
 	// on loop back, and probably not on every platform.
+	c->dial_aio = NULL;
 	nni_aio_set_prov_data(aio, NULL);
 	nni_mtx_unlock(&d->mtx);
-	nni_posix_ipc_start(c);
 	nni_aio_set_output(aio, 0, c);
 	nni_aio_finish(aio, 0, 0);
 	return;
 
 error:
+	c->dial_aio = NULL;
 	nni_aio_set_prov_data(aio, NULL);
 	nni_mtx_unlock(&d->mtx);
+	nng_stream_stop(&c->stream);
 	nng_stream_free(&c->stream);
 	nni_aio_finish_error(aio, rv);
 }
@@ -319,12 +318,11 @@ nni_ipc_dialer_alloc(nng_stream_dialer **dp, const nng_url *url)
 	d->closed      = false;
 	d->sd.sd_free  = ipc_dialer_free;
 	d->sd.sd_close = ipc_dialer_close;
+	d->sd.sd_stop  = ipc_dialer_stop;
 	d->sd.sd_dial  = ipc_dialer_dial;
 	d->sd.sd_get   = ipc_dialer_get;
 	d->sd.sd_set   = ipc_dialer_set;
-	nni_atomic_init_bool(&d->fini);
-	nni_atomic_init(&d->ref);
-	nni_atomic_inc(&d->ref);
+	nni_refcnt_init(&d->ref, 1, d, ipc_dialer_fini);
 
 	*dp = (void *) d;
 	return (0);

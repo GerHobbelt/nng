@@ -19,7 +19,6 @@
 // Functionality related to dialing.
 static void dialer_connect_start(nni_dialer *);
 static void dialer_connect_cb(void *);
-static void dialer_connect_cb_old(void *);
 static void dialer_timer_cb(void *);
 
 static nni_id_map dialers    = NNI_ID_MAP_INITIALIZER(1, 0x7fffffff, 0);
@@ -218,11 +217,14 @@ nni_dialer_init(nni_dialer *d, nni_sock *s, nni_sp_tran *tran)
 	int   rv;
 	void *dp;
 
-	d->d_closed = false;
-	d->d_data   = NULL;
-	d->d_ref    = 1;
-	d->d_sock   = s;
-	d->d_tran   = tran;
+	d->d_closed   = false;
+	d->d_data     = NULL;
+	d->d_ref      = 1;
+	d->d_sock     = s;
+	d->d_tran     = tran;
+	d->d_inirtime = NNI_SECOND / 100; // 10ms
+	d->d_maxrtime = NNI_SECOND;
+	d->d_currtime = d->d_inirtime;
 	nni_atomic_flag_reset(&d->d_started);
 
 	// Make a copy of the endpoint operations.  This allows us to
@@ -235,20 +237,10 @@ nni_dialer_init(nni_dialer *d, nni_sock *s, nni_sp_tran *tran)
 
 	nni_mtx_init(&d->d_mtx);
 
-	if (d->d_ops.d_size != 0) {
-		d->d_data = ((uint8_t *) d) + NNI_ALIGN_UP(sizeof(*d));
-		dp        = d->d_data;
-	} else {
-		// legacy: remove me when transports converted
-		dp = &d->d_data;
-	}
+	d->d_data = ((uint8_t *) d) + NNI_ALIGN_UP(sizeof(*d));
+	dp        = d->d_data;
 
-	if (tran->tran_pipe->p_size) {
-		nni_aio_init(&d->d_con_aio, dialer_connect_cb, d);
-	} else {
-		// legacy: remove me
-		nni_aio_init(&d->d_con_aio, dialer_connect_cb_old, d);
-	}
+	nni_aio_init(&d->d_con_aio, dialer_connect_cb, d);
 	nni_aio_init(&d->d_tmo_aio, dialer_timer_cb, d);
 
 	dialer_stats_init(d);
@@ -429,50 +421,7 @@ dialer_connect_cb(void *arg)
 		break;
 	case NNG_ECLOSED:   // No further action.
 	case NNG_ECANCELED: // No further action.
-		nni_dialer_bump_error(d, rv);
-		break;
-	case NNG_ECONNREFUSED:
-	case NNG_ETIMEDOUT:
-	default:
-		nng_log_warn("NNG-CONN-FAIL",
-		    "Failed connecting socket<%u>: %s", nni_sock_id(d->d_sock),
-		    nng_strerror(rv));
-
-		nni_dialer_bump_error(d, rv);
-		if (user_aio == NULL) {
-			nni_dialer_timer_start(d);
-		} else {
-			nni_atomic_flag_reset(&d->d_started);
-		}
-		break;
-	}
-	if (user_aio != NULL) {
-		nni_aio_finish(user_aio, rv, 0);
-	}
-}
-
-static void
-dialer_connect_cb_old(void *arg)
-{
-	nni_dialer *d   = arg;
-	nni_aio    *aio = &d->d_con_aio;
-	nni_aio    *user_aio;
-	int         rv;
-
-	nni_mtx_lock(&d->d_mtx);
-	user_aio      = d->d_user_aio;
-	d->d_user_aio = NULL;
-	nni_mtx_unlock(&d->d_mtx);
-
-	switch ((rv = nni_aio_result(aio))) {
-	case 0:
-#ifdef NNG_ENABLE_STATS
-		nni_stat_inc(&d->st_connect, 1);
-#endif
-		nni_dialer_add_pipe(d, nni_aio_get_output(aio, 0));
-		break;
-	case NNG_ECLOSED:   // No further action.
-	case NNG_ECANCELED: // No further action.
+	case NNG_ESTOPPED:  // No further action.
 		nni_dialer_bump_error(d, rv);
 		break;
 	case NNG_ECONNREFUSED:
@@ -518,7 +467,7 @@ nni_dialer_start(nni_dialer *d, unsigned flags)
 			nni_atomic_flag_reset(&d->d_started);
 			return (rv);
 		}
-		nni_aio_begin(aio);
+		nni_aio_start(aio, NULL, NULL);
 	}
 
 	nni_mtx_lock(&d->d_mtx);

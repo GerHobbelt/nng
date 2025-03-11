@@ -1,14 +1,17 @@
 # nng - nanomsg-next-gen
 
 [![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg)](https://stand-with-ukraine.pp.ua)
-[![Linux Status](https://img.shields.io/github/actions/workflow/status/nanomsg/nng/linux.yml?branch=main&logoColor=grey&logo=ubuntu&label=)](https://github.com/nanomsg/nng/actions)
+[![Linux Status](https://img.shields.io/github/actions/workflow/status/nanomsg/nng/linux.yml?branch=main&logoColor=grey&logo=linux&label=)](https://github.com/nanomsg/nng/actions)
 [![Windows Status](https://img.shields.io/github/actions/workflow/status/nanomsg/nng/windows.yml?branch=main&logoColor=grey&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0ODc1IDQ4NzUiPjxwYXRoIGZpbGw9ImdyZXkiIGQ9Ik0wIDBoMjMxMXYyMzEwSDB6bTI1NjQgMGgyMzExdjIzMTBIMjU2NHpNMCAyNTY0aDIzMTF2MjMxMUgwem0yNTY0IDBoMjMxMXYyMzExSDI1NjQiLz48L3N2Zz4=&label=)](https://github.com/nanomsg/nng/actions)
 [![macOS Status](https://img.shields.io/github/actions/workflow/status/nanomsg/nng/darwin.yml?branch=main&logoColor=grey&logo=apple&label=)](https://github.com/nanomsg/nng/actions)
+[![FreeBSD Status](https://img.shields.io/github/actions/workflow/status/nanomsg/nng/freebsd.yml?branch=main&logoColor=grey&logo=freebsd&label=)](https://github.com/nanomsg/nng/actions)
+[![illumos Status](https://img.shields.io/github/actions/workflow/status/nanomsg/nng/omnios.yml?branch=main&logoColor=grey&logo=accuweather&label=)](https://github.com/nanomsg/nng/actions)
 [![Coverage](https://img.shields.io/codecov/c/github/nanomsg/nng/branch/main?logo=codecov&logoColor=grey&label=)](https://codecov.io/gh/nanomsg/nng/tree/main)
 [![Discord](https://img.shields.io/discord/639573728212156478?label=&logo=discord)](https://discord.gg/Xnac6b9)
 [![Manual](https://img.shields.io/static/v1?label=&message=docs&logo=asciidoctor&logoColor=silver&color=blue)](https://nng.nanomsg.org/man)
 [![MIT License](https://img.shields.io/github/license/nanomsg/nng.svg?logoColor=silver&logo=open-source-initiative&label=&color=blue)](https://github.com/nanomsg/nng/blob/main/LICENSE.txt)
-[![Latest Version](https://img.shields.io/github/v/tag/nanomsg/nng.svg?logo=github&label=)](https://github.com/nanomsg/nng/releases)
+[![Latest Pre-Release](https://img.shields.io/github/v/release/nanomsg/nng.svg?logo=github&label=)](https://github.com/nanomsg/nng/releases)
+[![Latest Release](https://img.shields.io/github/v/release/nanomsg/nng.svg?include_prereleases&logo=github&label=)](https://github.com/nanomsg/nng/releases)
 
 Please see [here](UKRAINE.md) for an important message for the people of Russia.
 
@@ -44,7 +47,7 @@ The API frees the programmer from worrying about details like connection
 management, retries, and other common considerations, so that they
 can focus on the application instead of the plumbing.
 
-NNG is implemented in C, requiring only C99 and CMake to build.
+NNG is implemented in C, requiring only a relatively modern C compiler (C11) and CMake to build.
 It can be built as a shared or a static library, and is readily
 embeddable. It is also designed to be easy to port to new platforms
 if your platform is not already supported.
@@ -123,18 +126,24 @@ are involved.)
 
 ## Supported Platforms
 
-NNG supports Linux, macOS, Windows (Vista or better), illumos, Solaris,
-FreeBSD, Android, and iOS. Most other POSIX platforms should work out of
+NNG supports Linux, macOS, Windows, illumos, Solaris,
+FreeBSD, Android, and iOS.
+It is regularly tested against macOS, Windows, OmniOS, Ubuntu, and FreeBSD.
+Most other POSIX platforms should work out of
 the box but have not been tested. Very old versions of otherwise supported
 platforms might not work.
 
 Officially, NNG only supports operating systems that are supported by
 their vendors. For example, Windows versions 8.1 and lower are no longer
-officially supported.
+officially supported, and macOS versions predating Ventura are no longer
+officially supported. Very old versions of systems may or may not work,
+and we will generally expend no effort trying to make an unsupported system
+function.
+We generally only test relatively recent versions of supported systems.
 
 ## Requirements
 
-To build this project, you will need a C99 compatible compiler and
+To build this project, you will need a C11 compatible compiler and
 [CMake](http://www.cmake.org) version 3.15 or newer.
 
 We recommend using the [Ninja](https://ninja-build.org) build
@@ -143,7 +152,7 @@ system (pass `-G Ninja` to CMake) when you can.
 blindingly fast and has made our lives as developers measurably better.)
 
 If you want to build with TLS support you will also need
-[Mbed TLS](https://tls.mbed.org).
+[Mbed TLS](https://tls.mbed.org) or [WolfSSL](https://wolfssl.com).  
 See the [build instructions](docs/BUILD_TLS.md) for details.
 
 ## Quick Start

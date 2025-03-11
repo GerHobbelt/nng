@@ -145,16 +145,12 @@ ipc_dialer_dial(void *arg, nni_aio *aio)
 {
 	ipc_dialer    *d = arg;
 	ipc_dial_work *w = &ipc_connector;
-	int            rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 
 	nni_mtx_lock(&w->mtx);
-	if ((rv = nni_aio_schedule(aio, ipc_dial_cancel, d)) != 0) {
+	if (!nni_aio_start(aio, ipc_dial_cancel, d)) {
 		nni_mtx_unlock(&w->mtx);
-		nni_aio_finish_error(aio, rv);
 		return;
 	}
 
@@ -192,10 +188,17 @@ ipc_dialer_close(void *arg)
 }
 
 static void
-ipc_dialer_free(void *arg)
+ipc_dialer_stop(void *arg)
 {
 	ipc_dialer *d = arg;
 	ipc_dialer_close(d);
+}
+
+static void
+ipc_dialer_free(void *arg)
+{
+	ipc_dialer *d = arg;
+	ipc_dialer_stop(d);
 	if (d->path) {
 		nni_strfree(d->path);
 	}
@@ -260,6 +263,7 @@ nni_ipc_dialer_alloc(nng_stream_dialer **dp, const nng_url *url)
 	d->closed             = false;
 	d->sd.sd_free         = ipc_dialer_free;
 	d->sd.sd_close        = ipc_dialer_close;
+	d->sd.sd_stop         = ipc_dialer_stop;
 	d->sd.sd_dial         = ipc_dialer_dial;
 	d->sd.sd_get          = ipc_dialer_get;
 	d->sd.sd_set          = ipc_dialer_set;

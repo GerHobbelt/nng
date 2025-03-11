@@ -746,9 +746,7 @@ ws_send_close(nni_ws *ws, uint16_t code)
 	}
 	ws->closed = true;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 	ws->wclose = true;
 	rv = ws_msg_init_control(&frame, ws, WS_CLOSE, buf, sizeof(buf));
 	if (rv != 0) {
@@ -756,9 +754,8 @@ ws_send_close(nni_ws *ws, uint16_t code)
 		nni_aio_finish_error(aio, rv);
 		return;
 	}
-	if ((rv = nni_aio_schedule(aio, ws_cancel_close, ws)) != 0) {
+	if (!nni_aio_start(aio, ws_cancel_close, ws)) {
 		ws->wclose = false;
-		nni_aio_finish_error(aio, rv);
 		ws_frame_fini(frame);
 		return;
 	}
@@ -1183,12 +1180,9 @@ ws_close_error(nni_ws *ws, uint16_t code)
 }
 
 static void
-ws_fini(void *arg)
+ws_stop(void *arg)
 {
-	nni_ws   *ws = arg;
-	ws_frame *frame;
-	nng_aio  *aio;
-
+	nni_ws *ws = arg;
 	ws_close_error(ws, WS_CLOSE_NORMAL_CLOSE);
 
 	// Give a chance for the close frame to drain.
@@ -1198,7 +1192,6 @@ ws_fini(void *arg)
 	nni_aio_stop(&ws->txaio);
 	nni_aio_stop(&ws->closeaio);
 	nni_aio_stop(&ws->httpaio);
-	nni_aio_stop(&ws->connaio);
 
 	if (nni_list_node_active(&ws->node)) {
 		nni_ws_dialer *d;
@@ -1210,6 +1203,16 @@ ws_fini(void *arg)
 			nni_mtx_unlock(&d->mtx);
 		}
 	}
+}
+
+static void
+ws_fini(void *arg)
+{
+	nni_ws   *ws = arg;
+	ws_frame *frame;
+	nng_aio  *aio;
+
+	ws_stop(ws);
 
 	nni_mtx_lock(&ws->mtx);
 	while ((frame = nni_list_first(&ws->rxq)) != NULL) {
@@ -1450,6 +1453,7 @@ ws_init(nni_ws **wsp)
 
 	ws->ops.s_close = ws_str_close;
 	ws->ops.s_free  = ws_str_free;
+	ws->ops.s_stop  = ws_stop;
 	ws->ops.s_send  = ws_str_send;
 	ws->ops.s_recv  = ws_str_recv;
 	ws->ops.s_get   = ws_str_get;
@@ -1460,10 +1464,11 @@ ws_init(nni_ws **wsp)
 }
 
 static void
-ws_listener_free(void *arg)
+ws_listener_stop(void *arg)
 {
-	nni_ws_listener *l = arg;
-	ws_header       *hdr;
+	nni_ws_listener  *l = arg;
+	nni_http_handler *h;
+	nni_http_server  *s;
 
 	ws_listener_close(l);
 
@@ -1471,16 +1476,27 @@ ws_listener_free(void *arg)
 	while (!nni_list_empty(&l->reply)) {
 		nni_cv_wait(&l->cv);
 	}
+	h          = l->handler;
+	s          = l->server;
+	l->handler = NULL;
+	l->server  = NULL;
 	nni_mtx_unlock(&l->mtx);
 
-	if (l->handler != NULL) {
-		nni_http_handler_fini(l->handler);
-		l->handler = NULL;
+	if (h != NULL) {
+		nni_http_handler_fini(h);
 	}
-	if (l->server != NULL) {
-		nni_http_server_fini(l->server);
-		l->server = NULL;
+	if (s != NULL) {
+		nni_http_server_fini(s);
 	}
+}
+
+static void
+ws_listener_free(void *arg)
+{
+	nni_ws_listener *l = arg;
+	ws_header       *hdr;
+
+	ws_listener_stop(l);
 
 	nni_cv_fini(&l->cv);
 	nni_mtx_fini(&l->mtx);
@@ -1585,11 +1601,7 @@ ws_handler(nni_aio *aio)
 		goto err;
 	}
 
-	if (nni_http_res_set_status(res, NNG_HTTP_STATUS_SWITCHING) != 0) {
-		nni_http_res_free(res);
-		status = NNG_HTTP_STATUS_INTERNAL_SERVER_ERROR;
-		goto err;
-	}
+	nni_http_res_set_status(res, NNG_HTTP_STATUS_SWITCHING);
 
 	if ((SETH("Connection", "Upgrade") != 0) ||
 	    (SETH("Upgrade", "websocket") != 0) ||
@@ -1704,11 +1716,8 @@ ws_listener_accept(void *arg, nni_aio *aio)
 {
 	nni_ws_listener *l = arg;
 	nni_ws          *ws;
-	int              rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 	nni_mtx_lock(&l->mtx);
 	if (l->closed) {
 		nni_aio_finish_error(aio, NNG_ECLOSED);
@@ -1727,8 +1736,7 @@ ws_listener_accept(void *arg, nni_aio *aio)
 		nni_aio_finish(aio, 0, 0);
 		return;
 	}
-	if ((rv = nni_aio_schedule(aio, ws_accept_cancel, l)) != 0) {
-		nni_aio_finish_error(aio, rv);
+	if (!nni_aio_start(aio, ws_accept_cancel, l)) {
 		nni_mtx_unlock(&l->mtx);
 		return;
 	}
@@ -2135,9 +2143,10 @@ nni_ws_listener_alloc(nng_stream_listener **wslp, const nng_url *url)
 		return (rv);
 	}
 
-	if (((rv = nni_http_handler_set_host(l->handler, host)) != 0) ||
-	    ((rv = nni_http_handler_set_data(l->handler, l, 0)) != 0) ||
-	    ((rv = nni_http_server_init(&l->server, url)) != 0)) {
+	nni_http_handler_set_host(l->handler, host);
+	nni_http_handler_set_data(l->handler, l, 0);
+
+	if ((rv = nni_http_server_init(&l->server, url)) != 0) {
 		ws_listener_free(l);
 		return (rv);
 	}
@@ -2148,6 +2157,7 @@ nni_ws_listener_alloc(nng_stream_listener **wslp, const nng_url *url)
 	l->isstream       = true;
 	l->ops.sl_free    = ws_listener_free;
 	l->ops.sl_close   = ws_listener_close;
+	l->ops.sl_stop    = ws_listener_stop;
 	l->ops.sl_accept  = ws_listener_accept;
 	l->ops.sl_listen  = ws_listener_listen;
 	l->ops.sl_set     = ws_listener_set;
@@ -2255,16 +2265,43 @@ err:
 }
 
 static void
-ws_dialer_free(void *arg)
+ws_dialer_close(void *arg)
 {
 	nni_ws_dialer *d = arg;
-	ws_header     *hdr;
+	nni_ws        *ws;
+	nni_mtx_lock(&d->mtx);
+	if (d->closed) {
+		nni_mtx_unlock(&d->mtx);
+		return;
+	}
+	d->closed = true;
+	NNI_LIST_FOREACH (&d->wspend, ws) {
+		nni_aio_close(&ws->connaio);
+		nni_aio_close(&ws->httpaio);
+	}
+	nni_mtx_unlock(&d->mtx);
+}
 
+static void
+ws_dialer_stop(void *arg)
+{
+	nni_ws_dialer *d = arg;
+
+	ws_dialer_close(d);
 	nni_mtx_lock(&d->mtx);
 	while (!nni_list_empty(&d->wspend)) {
 		nni_cv_wait(&d->cv);
 	}
 	nni_mtx_unlock(&d->mtx);
+}
+
+static void
+ws_dialer_free(void *arg)
+{
+	nni_ws_dialer *d = arg;
+	ws_header     *hdr;
+
+	ws_dialer_stop(d);
 
 	nni_strfree(d->proto);
 	while ((hdr = nni_list_first(&d->headers)) != NULL) {
@@ -2282,24 +2319,6 @@ ws_dialer_free(void *arg)
 	nni_cv_fini(&d->cv);
 	nni_mtx_fini(&d->mtx);
 	NNI_FREE_STRUCT(d);
-}
-
-static void
-ws_dialer_close(void *arg)
-{
-	nni_ws_dialer *d = arg;
-	nni_ws        *ws;
-	nni_mtx_lock(&d->mtx);
-	if (d->closed) {
-		nni_mtx_unlock(&d->mtx);
-		return;
-	}
-	d->closed = true;
-	NNI_LIST_FOREACH (&d->wspend, ws) {
-		nni_aio_close(&ws->connaio);
-		nni_aio_close(&ws->httpaio);
-	}
-	nni_mtx_unlock(&d->mtx);
 }
 
 static void
@@ -2324,9 +2343,7 @@ ws_dialer_dial(void *arg, nni_aio *aio)
 	nni_ws        *ws;
 	int            rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 	if ((rv = ws_init(&ws)) != 0) {
 		nni_aio_finish_error(aio, rv);
 		return;
@@ -2338,9 +2355,8 @@ ws_dialer_dial(void *arg, nni_aio *aio)
 		ws_reap(ws);
 		return;
 	}
-	if ((rv = nni_aio_schedule(aio, ws_dial_cancel, ws)) != 0) {
+	if (!nni_aio_start(aio, ws_dial_cancel, ws)) {
 		nni_mtx_unlock(&d->mtx);
-		nni_aio_finish_error(aio, rv);
 		ws_reap(ws);
 		return;
 	}
@@ -2679,6 +2695,7 @@ nni_ws_dialer_alloc(nng_stream_dialer **dp, const nng_url *url)
 
 	d->ops.sd_free    = ws_dialer_free;
 	d->ops.sd_close   = ws_dialer_close;
+	d->ops.sd_stop    = ws_dialer_stop;
 	d->ops.sd_dial    = ws_dialer_dial;
 	d->ops.sd_set     = ws_dialer_set;
 	d->ops.sd_get     = ws_dialer_get;
@@ -2714,9 +2731,7 @@ ws_str_send(void *arg, nni_aio *aio)
 	int       rv;
 	ws_frame *frame;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 
 	if (!ws->isstream) {
 		nni_msg *msg;
@@ -2759,9 +2774,8 @@ ws_str_send(void *arg, nni_aio *aio)
 		ws_frame_fini(frame);
 		return;
 	}
-	if ((rv = nni_aio_schedule(aio, ws_write_cancel, ws)) != 0) {
+	if (!nni_aio_start(aio, ws_write_cancel, ws)) {
 		nni_mtx_unlock(&ws->mtx);
-		nni_aio_finish_error(aio, rv);
 		ws_frame_fini(frame);
 		return;
 	}
@@ -2776,15 +2790,11 @@ static void
 ws_str_recv(void *arg, nng_aio *aio)
 {
 	nni_ws *ws = arg;
-	int     rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 	nni_mtx_lock(&ws->mtx);
-	if ((rv = nni_aio_schedule(aio, ws_read_cancel, ws)) != 0) {
+	if (!nni_aio_start(aio, ws_read_cancel, ws)) {
 		nni_mtx_unlock(&ws->mtx);
-		nni_aio_finish_error(aio, rv);
 		return;
 	}
 	nni_list_append(&ws->recvq, aio);

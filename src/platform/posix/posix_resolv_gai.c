@@ -37,7 +37,12 @@
 #endif
 
 #ifndef NNG_HAVE_INET6
+#ifdef HAVE_NNG_HAVE_INET6_BSD
+#define NNG_HAVE_INET6
+#include <netinet6/in6.h>
+#else
 #undef NNG_ENABLE_IPV6
+#endif
 #endif
 
 static nni_mtx  resolv_mtx  = NNI_MTX_INITIALIZER;
@@ -225,11 +230,8 @@ nni_resolv_ip(const char *host, uint16_t port, int af, bool passive,
 {
 	resolv_item *item;
 	sa_family_t  fam;
-	int          rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 	if (host != NULL) {
 		if ((strlen(host) >= sizeof(item->host)) ||
 		    (strcmp(host, "*") == 0)) {
@@ -278,16 +280,17 @@ nni_resolv_ip(const char *host, uint16_t port, int af, bool passive,
 	item->sa      = sa;
 
 	nni_mtx_lock(&resolv_mtx);
-	if (resolv_fini) {
-		rv = NNG_ECLOSED;
-	} else {
-		nni_aio_set_prov_data(aio, item);
-		rv = nni_aio_schedule(aio, resolv_cancel, item);
-	}
-	if (rv != 0) {
+	nni_aio_set_prov_data(aio, item);
+	if (!nni_aio_start(aio, resolv_cancel, item)) {
 		nni_mtx_unlock(&resolv_mtx);
 		resolv_free_item(item);
-		nni_aio_finish_error(aio, rv);
+		return;
+	}
+
+	if (resolv_fini) {
+		nni_mtx_unlock(&resolv_mtx);
+		resolv_free_item(item);
+		nni_aio_finish_error(aio, NNG_ECLOSED);
 		return;
 	}
 	nni_list_append(&resolv_aios, aio);

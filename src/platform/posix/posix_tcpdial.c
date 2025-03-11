@@ -24,8 +24,15 @@
 #include "posix_tcp.h"
 
 #ifndef NNG_HAVE_INET6
+#ifdef HAVE_NNG_HAVE_INET6_BSD
+#define NNG_HAVE_INET6
+#include <netinet6/in6.h>
+#else
 #undef NNG_ENABLE_IPV6
 #endif
+#endif
+
+static void tcp_dialer_fini(void *arg);
 
 // Dialer stuff.
 int
@@ -39,10 +46,8 @@ nni_tcp_dialer_init(nni_tcp_dialer **dp)
 	nni_mtx_init(&d->mtx);
 	d->closed  = false;
 	d->nodelay = true;
+	nni_refcnt_init(&d->ref, 1, d, tcp_dialer_fini);
 	nni_aio_list_init(&d->connq);
-	nni_atomic_init_bool(&d->fini);
-	nni_atomic_init(&d->ref);
-	nni_atomic_inc(&d->ref);
 	*dp = d;
 	return (0);
 }
@@ -70,28 +75,30 @@ nni_tcp_dialer_close(nni_tcp_dialer *d)
 }
 
 static void
-tcp_dialer_fini(nni_tcp_dialer *d)
+tcp_dialer_fini(void *arg)
 {
+	nni_tcp_dialer *d = arg;
 	nni_mtx_fini(&d->mtx);
 	NNI_FREE_STRUCT(d);
 }
 
 void
-nni_tcp_dialer_fini(nni_tcp_dialer *d)
+nni_tcp_dialer_stop(nni_tcp_dialer *d)
 {
 	nni_tcp_dialer_close(d);
-	nni_atomic_set_bool(&d->fini, true);
+}
+
+void
+nni_tcp_dialer_fini(nni_tcp_dialer *d)
+{
+	nni_tcp_dialer_stop(d);
 	nni_posix_tcp_dialer_rele(d);
 }
 
 void
 nni_posix_tcp_dialer_rele(nni_tcp_dialer *d)
 {
-	if (((nni_atomic_dec_nv(&d->ref) != 0)) ||
-	    (!nni_atomic_get_bool(&d->fini))) {
-		return;
-	}
-	tcp_dialer_fini(d);
+	nni_refcnt_rele(&d->ref);
 }
 
 static void
@@ -112,11 +119,13 @@ tcp_dialer_cancel(nni_aio *aio, void *arg, int rv)
 	nni_mtx_unlock(&d->mtx);
 
 	nni_aio_finish_error(aio, rv);
+	nng_stream_close(&c->stream);
+	nng_stream_stop(&c->stream);
 	nng_stream_free(&c->stream);
 }
 
-static void
-tcp_dialer_cb(nni_posix_pfd *pfd, unsigned ev, void *arg)
+void
+nni_posix_tcp_dial_cb(void *arg, unsigned ev)
 {
 	nni_tcp_conn   *c = arg;
 	nni_tcp_dialer *d = c->dialer;
@@ -137,7 +146,7 @@ tcp_dialer_cb(nni_posix_pfd *pfd, unsigned ev, void *arg)
 
 	} else {
 		socklen_t sz = sizeof(int);
-		int       fd = nni_posix_pfd_fd(pfd);
+		int       fd = nni_posix_pfd_fd(&c->pfd);
 		if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &rv, &sz) < 0) {
 			rv = errno;
 		}
@@ -177,7 +186,6 @@ void
 nni_tcp_dial(nni_tcp_dialer *d, const nni_sockaddr *sa, nni_aio *aio)
 {
 	nni_tcp_conn           *c;
-	nni_posix_pfd          *pfd = NULL;
 	struct sockaddr_storage ss;
 	size_t                  sslen;
 	int                     fd;
@@ -185,9 +193,7 @@ nni_tcp_dial(nni_tcp_dialer *d, const nni_sockaddr *sa, nni_aio *aio)
 	int                     ka;
 	int                     nd;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 
 	if (((sslen = nni_posix_nn2sockaddr(&ss, sa)) == 0) ||
 	    ((ss.ss_family != AF_INET) && (ss.ss_family != AF_INET6))) {
@@ -200,27 +206,22 @@ nni_tcp_dial(nni_tcp_dialer *d, const nni_sockaddr *sa, nni_aio *aio)
 		return;
 	}
 
-	nni_atomic_inc(&d->ref);
-
-	if ((rv = nni_posix_tcp_alloc(&c, d)) != 0) {
+	if ((rv = nni_posix_tcp_alloc(&c, d, fd)) != 0) {
+		(void) close(fd);
 		nni_aio_finish_error(aio, rv);
-		nni_posix_tcp_dialer_rele(d);
 		return;
 	}
 
-	// This arranges for the fd to be in non-blocking mode, and adds the
-	// poll fd to the list.
-	if ((rv = nni_posix_pfd_init(&pfd, fd)) != 0) {
-		(void) close(fd);
-		// the error label unlocks this
-		nni_mtx_lock(&d->mtx);
-		goto error;
-	}
-
-	nni_posix_tcp_init(c, pfd);
-	nni_posix_pfd_set_cb(pfd, tcp_dialer_cb, c);
+	// hold for the stream
+	nni_refcnt_hold(&d->ref);
 
 	nni_mtx_lock(&d->mtx);
+	if (!nni_aio_start(aio, tcp_dialer_cancel, d)) {
+		nni_mtx_unlock(&d->mtx);
+		nng_stream_free(&c->stream);
+		return;
+	}
+
 	if (d->closed) {
 		rv = NNG_ECLOSED;
 		goto error;
@@ -231,19 +232,16 @@ nni_tcp_dial(nni_tcp_dialer *d, const nni_sockaddr *sa, nni_aio *aio)
 			goto error;
 		}
 	}
-	if ((rv = nni_aio_schedule(aio, tcp_dialer_cancel, d)) != 0) {
-		goto error;
-	}
+	c->dial_aio = aio;
 	if (connect(fd, (void *) &ss, sslen) != 0) {
 		if (errno != EINPROGRESS) {
 			rv = nni_plat_errno(errno);
 			goto error;
 		}
 		// Asynchronous connect.
-		if ((rv = nni_posix_pfd_arm(pfd, NNI_POLL_OUT)) != 0) {
+		if ((rv = nni_posix_pfd_arm(&c->pfd, NNI_POLL_OUT)) != 0) {
 			goto error;
 		}
-		c->dial_aio = aio;
 		nni_aio_set_prov_data(aio, c);
 		nni_list_append(&d->connq, aio);
 		nni_mtx_unlock(&d->mtx);
@@ -251,6 +249,7 @@ nni_tcp_dial(nni_tcp_dialer *d, const nni_sockaddr *sa, nni_aio *aio)
 	}
 	// Immediate connect, cool!  This probably only happens
 	// on loop back, and probably not on every platform.
+	c->dial_aio = NULL;
 	nni_aio_set_prov_data(aio, NULL);
 	nd = d->nodelay ? 1 : 0;
 	ka = d->keepalive ? 1 : 0;
@@ -261,8 +260,11 @@ nni_tcp_dial(nni_tcp_dialer *d, const nni_sockaddr *sa, nni_aio *aio)
 	return;
 
 error:
+	c->dial_aio = NULL;
 	nni_aio_set_prov_data(aio, NULL);
 	nni_mtx_unlock(&d->mtx);
+	nng_stream_close(&c->stream);
+	nng_stream_stop(&c->stream);
 	nng_stream_free(&c->stream);
 	nni_aio_finish_error(aio, rv);
 }

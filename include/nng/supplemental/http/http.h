@@ -87,6 +87,11 @@ enum nng_http_status {
 	NNG_HTTP_STATUS_NETWORK_AUTH_REQUIRED    = 511,
 };
 
+#define NNG_HTTP_VERSION_1_0 "HTTP/1.0"
+#define NNG_HTTP_VERSION_1_1 "HTTP/1.1"
+#define NNG_HTTP_VERSION_2 "HTTP/2"
+#define NNG_HTTP_VERSION_3 "HTTP/3"
+
 // nng_http_req represents an HTTP request.
 typedef struct nng_http_req nng_http_req;
 
@@ -131,7 +136,7 @@ NNG_DECL const char *nng_http_req_get_header(
 // nng_http_req_set_method is used to change the method of a request.
 // The method should be an upper case HTTP method, like POST, or DELETE.
 // Null sets the default ("GET").
-NNG_DECL int nng_http_req_set_method(nng_http_req *, const char *);
+NNG_DECL void nng_http_req_set_method(nng_http_req *, const char *);
 
 // nng_http_req_set_version is used to change the version of a request.
 // Normally the version is "HTTP/1.1".  Note that the framework does
@@ -178,7 +183,7 @@ NNG_DECL void nng_http_res_free(nng_http_res *);
 NNG_DECL uint16_t nng_http_res_get_status(const nng_http_res *);
 
 // nng_http_res_set_status sets the HTTP status code.
-NNG_DECL int nng_http_res_set_status(nng_http_res *, uint16_t);
+NNG_DECL void nng_http_res_set_status(nng_http_res *, uint16_t);
 
 // nng_http_res_get_reason returns the human readable status message
 // that the server responds (or responded) with.
@@ -350,14 +355,14 @@ NNG_DECL int nng_http_handler_alloc_directory(
 // called for.  By default this is GET.  If NULL is supplied for the
 // method, then the handler is executed regardless of method, and must
 // inspect the method itself.
-NNG_DECL int nng_http_handler_set_method(nng_http_handler *, const char *);
+NNG_DECL void nng_http_handler_set_method(nng_http_handler *, const char *);
 
 // nng_http_handler_set_host sets the Host: that the handler will be
 // called for (to allow for virtual hosts).  If the value is NULL (the
 // default, then the Host: header is not considered when matching the
 // handler.)  Note that the Host: header must match *exactly* (except
 // that case is not considered.)
-NNG_DECL int nng_http_handler_set_host(nng_http_handler *, const char *);
+NNG_DECL void nng_http_handler_set_host(nng_http_handler *, const char *);
 
 // nng_http_handler_collect_body is used to indicate the server should
 // check for, and process, data sent by the client, which will be attached
@@ -367,13 +372,13 @@ NNG_DECL int nng_http_handler_set_host(nng_http_handler *, const char *);
 // then a 400 Bad Request will be sent back to the client.  To set an
 // unlimited value, use (size_t)-1.  To preclude the client from sending
 // *any* data, use 0.  (The static and file handlers use 0 by default.)
-NNG_DECL int nng_http_handler_collect_body(nng_http_handler *, bool, size_t);
+NNG_DECL void nng_http_handler_collect_body(nng_http_handler *, bool, size_t);
 
 // nng_http_handler_set_tree indicates that the handler is being registered
 // for a hierarchical tree, rather than just a single path, so it will be
 // called for all child paths supplied.  By default the handler is only
 // called for an exact path match.
-NNG_DECL int nng_http_handler_set_tree(nng_http_handler *);
+NNG_DECL void nng_http_handler_set_tree(nng_http_handler *);
 
 // nng_http_handler_set_tree_exclusive indicates that the handler is being
 // registered for a heirarchical tree *exclusively*, rather than just a single
@@ -381,13 +386,13 @@ NNG_DECL int nng_http_handler_set_tree(nng_http_handler *);
 // handler is only called for an exact path match. Exclusive means that any
 // other handler on a conflicting path will induce an address conflict error
 // when added to a server.
-NNG_DECL int nng_http_handler_set_tree_exclusive(nng_http_handler *);
+NNG_DECL void nng_http_handler_set_tree_exclusive(nng_http_handler *);
 
 // nng_http_handler_set_data is used to store additional data, along with
 // a possible clean up routine.  (The clean up is a custom de-allocator and
 // will be called with the supplied data as an argument, when the handler
 // is being de-allocated.)
-NNG_DECL int nng_http_handler_set_data(
+NNG_DECL void nng_http_handler_set_data(
     nng_http_handler *, void *, void (*)(void *));
 
 // nng_http_handler_get_data returns the data that was previously stored.

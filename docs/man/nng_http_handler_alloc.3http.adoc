@@ -51,6 +51,12 @@ by the _path_ argument.
 Only the path component of the Request URI is
 considered when determining whether the handler should be called.
 
+This implementation limits the _path_ length to 1024 bytes, including the
+zero termination byte.  This does not prevent requests with much longer
+URIs from being supported, doing so will require setting the handler
+to matching a parent path in the tree using
+xref:nng_http_handler_set_tree.3http.adoc[`nng_http_handler_set_tree`()].
+
 Additionally each handler has a method it is registered to handle
 (the default is `GET`, see
 xref:nng_http_handler_set_method.3http.adoc[`nng_http_handler_set_method()`]), and
@@ -92,11 +98,7 @@ then a generic 500 response will be created and
 sent, if possible, and the connection will be closed.
 
 The _aio_ may be scheduled for deferred completion using the
-xref:nng_aio_defer.3.adoc[`nng_aio_defer()`] function.
-
-NOTE: The callback function should *NOT* call
-xref:nng_aio_begin.3.adoc[`nng_aio_begin()`],
-as that will already have been done by the server framework.
+xref:nng_aio_start.3.adoc[`nng_aio_start()`] function.
 
 === Directory Handler
 
@@ -175,7 +177,7 @@ These functions return 0 on success, and non-zero otherwise.
 == SEE ALSO
 
 [.text-left]
-xref:nng_aio_defer.3.adoc[nng_aio_defer(3)],
+xref:nng_aio_start.3.adoc[nng_aio_start(3)],
 xref:nng_aio_finish.3.adoc[nng_aio_finish(3)],
 xref:nng_aio_get_input.3.adoc[nng_aio_get_input(3)],
 xref:nng_aio_set_output.3.adoc[nng_aio_set_output(3)],

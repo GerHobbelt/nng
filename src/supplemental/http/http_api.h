@@ -135,11 +135,11 @@ extern int nni_http_res_alloc_data(nni_http_res *, size_t);
 extern const char *nni_http_req_get_method(const nni_http_req *);
 extern const char *nni_http_req_get_version(const nni_http_req *);
 extern const char *nni_http_req_get_uri(const nni_http_req *);
-extern int         nni_http_req_set_method(nni_http_req *, const char *);
+extern void        nni_http_req_set_method(nni_http_req *, const char *);
 extern int         nni_http_req_set_version(nni_http_req *, const char *);
 extern int         nni_http_req_set_uri(nni_http_req *, const char *);
 extern uint16_t    nni_http_res_get_status(const nni_http_res *);
-extern int         nni_http_res_set_status(nni_http_res *, uint16_t);
+extern void        nni_http_res_set_status(nni_http_res *, uint16_t);
 extern const char *nni_http_res_get_version(const nni_http_res *);
 extern int         nni_http_res_set_version(nni_http_res *, const char *);
 extern const char *nni_http_res_get_reason(const nni_http_res *);
@@ -304,14 +304,14 @@ extern void nni_http_handler_collect_body(nni_http_handler *, bool, size_t);
 // nni_http_handler_set_tree marks the handler as servicing the entire
 // tree (e.g. a directory), rather than just a leaf node.  The handler
 // will probably need to inspect the URL of the request.
-extern int nni_http_handler_set_tree(nni_http_handler *);
+extern void nni_http_handler_set_tree(nni_http_handler *);
 
 // nni_http_handler_set_tree_exclusive marks the handler as servicing the
 // entire tree (e.g. a directory) exclusively, rather than just a leaf node.
 // When servicing a tree exclusively, other handlers sharing parts of the uri
 // will induce an address conflict when adding them to a server. The handler
 // will probably need to inspect the URL of the request.
-extern int nni_http_handler_set_tree_exclusive(nni_http_handler *);
+extern void nni_http_handler_set_tree_exclusive(nni_http_handler *);
 
 // nni_http_handler_set_host limits the handler to only being called for
 // the given Host: field.  This can be used to set up multiple virtual
@@ -322,7 +322,7 @@ extern int nni_http_handler_set_tree_exclusive(nni_http_handler *);
 // on port number as we assume that clients MUST have gotten that part right
 // as we do not support virtual hosting on multiple separate ports; the
 // server only listens on a single port.
-extern int nni_http_handler_set_host(nni_http_handler *, const char *);
+extern void nni_http_handler_set_host(nni_http_handler *, const char *);
 
 // nni_http_handler_set_method limits the handler to only being called
 // for the given HTTP method.  By default a handler is called for GET
@@ -332,13 +332,13 @@ extern int nni_http_handler_set_host(nni_http_handler *, const char *);
 // is obligated to inspect the method.  (Note: the passed method must be
 // in upper case and should come from a statically allocated string; the
 // server does not make its own copy.)
-extern int nni_http_handler_set_method(nni_http_handler *, const char *);
+extern void nni_http_handler_set_method(nni_http_handler *, const char *);
 
 // nni_http_handler_set_data sets an opaque data element on the handler,
 // which will be available to the callback via nni_http_handler_get_data.
 // The callback is an optional destructor, and will be called with the
 // data as its argument, when the handler is being destroyed.
-extern int nni_http_handler_set_data(nni_http_handler *, void *, nni_cb);
+extern void nni_http_handler_set_data(nni_http_handler *, void *, nni_cb);
 
 // nni_http_handler_get_data returns the data that was previously stored
 // by nni_http_handler_set_data.

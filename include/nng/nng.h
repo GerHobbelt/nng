@@ -618,10 +618,10 @@ NNG_DECL void nng_aio_set_expire(nng_aio *, nng_time);
 // to succeed if n <= 4, otherwise it may fail due to NNG_ENOMEM.
 NNG_DECL int nng_aio_set_iov(nng_aio *, unsigned, const nng_iov *);
 
-// nng_aio_begin is called by the provider to mark the operation as
-// beginning.  If it returns false, then the provider must take no
-// further action on the aio.
-NNG_DECL bool nng_aio_begin(nng_aio *);
+// nng_aio_reset is called by the provider before doing other operations on the
+// aio.  Its purpose is to clear certain output fields, to avoid accidental
+// reuse from prior operations on the aio.
+NNG_DECL void nng_aio_reset(nng_aio *);
 
 // nng_aio_finish is used to "finish" an asynchronous operation.
 // It should only be called by "providers" (such as HTTP server API users).
@@ -630,7 +630,7 @@ NNG_DECL bool nng_aio_begin(nng_aio *);
 // given aio.
 NNG_DECL void nng_aio_finish(nng_aio *, int);
 
-// nng_aio_defer is used to register a cancellation routine, and indicate
+// nng_aio_start is used to register a cancellation routine, and indicate
 // that the operation will be completed asynchronously.  It must only be
 // called once per operation on an aio, and must only be called by providers.
 // If the operation is canceled by the consumer, the cancellation callback
@@ -640,8 +640,11 @@ NNG_DECL void nng_aio_finish(nng_aio *, int);
 // final argument is passed to the cancelfn.  The final argument of the
 // cancellation function is the error number (will not be zero) corresponding
 // to the reason for cancellation, e.g. NNG_ETIMEDOUT or NNG_ECANCELED.
+// This returns false if the operation cannot be deferred (because the AIO
+// has been stopped with nng_aio_stop.)  If it does so, then the aio's
+// completion callback will fire with a result of NNG_ESTOPPED.
 typedef void (*nng_aio_cancelfn)(nng_aio *, void *, int);
-NNG_DECL void nng_aio_defer(nng_aio *, nng_aio_cancelfn, void *);
+NNG_DECL bool nng_aio_start(nng_aio *, nng_aio_cancelfn, void *);
 
 // nng_aio_sleep does a "sleeping" operation, basically does nothing
 // but wait for the specified number of milliseconds to expire, then
@@ -1075,6 +1078,7 @@ enum nng_errno_enum {
 	NNG_EAMBIGUOUS   = 29,
 	NNG_EBADTYPE     = 30,
 	NNG_ECONNSHUT    = 31,
+	NNG_ESTOPPED     = 999,
 	NNG_EINTERNAL    = 1000,
 	NNG_ESYSERR      = 0x10000000,
 	NNG_ETRANERR     = 0x20000000
@@ -1137,6 +1141,7 @@ typedef struct nng_stream_listener nng_stream_listener;
 
 NNG_DECL void nng_stream_free(nng_stream *);
 NNG_DECL void nng_stream_close(nng_stream *);
+NNG_DECL void nng_stream_stop(nng_stream *);
 NNG_DECL void nng_stream_send(nng_stream *, nng_aio *);
 NNG_DECL void nng_stream_recv(nng_stream *, nng_aio *);
 NNG_DECL int  nng_stream_get_bool(nng_stream *, const char *, bool *);
@@ -1152,6 +1157,7 @@ NNG_DECL int nng_stream_dialer_alloc_url(
     nng_stream_dialer **, const nng_url *);
 NNG_DECL void nng_stream_dialer_free(nng_stream_dialer *);
 NNG_DECL void nng_stream_dialer_close(nng_stream_dialer *);
+NNG_DECL void nng_stream_dialer_stop(nng_stream_dialer *);
 NNG_DECL void nng_stream_dialer_dial(nng_stream_dialer *, nng_aio *);
 NNG_DECL int  nng_stream_dialer_get_bool(
      nng_stream_dialer *, const char *, bool *);
@@ -1193,6 +1199,7 @@ NNG_DECL int nng_stream_listener_alloc_url(
     nng_stream_listener **, const nng_url *);
 NNG_DECL void nng_stream_listener_free(nng_stream_listener *);
 NNG_DECL void nng_stream_listener_close(nng_stream_listener *);
+NNG_DECL void nng_stream_listener_stop(nng_stream_listener *);
 NNG_DECL int  nng_stream_listener_listen(nng_stream_listener *);
 NNG_DECL void nng_stream_listener_accept(nng_stream_listener *, nng_aio *);
 NNG_DECL int  nng_stream_listener_get_bool(

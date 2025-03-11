@@ -261,23 +261,21 @@ static void
 ipc_listener_accept(void *arg, nni_aio *aio)
 {
 	ipc_listener *l = arg;
-	int           rv;
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+
+	nni_aio_reset(aio);
 	nni_mtx_lock(&l->mtx);
 	if (!l->started) {
 		nni_mtx_unlock(&l->mtx);
 		nni_aio_finish_error(aio, NNG_ESTATE);
 		return;
 	}
-	if ((rv = nni_aio_schedule(aio, ipc_accept_cancel, l)) != 0) {
-		nni_aio_finish_error(aio, rv);
-	} else {
-		nni_list_append(&l->aios, aio);
-		if (nni_list_first(&l->aios) == aio) {
-			ipc_accept_start(l);
-		}
+	if (!nni_aio_start(aio, ipc_accept_cancel, l)) {
+		nni_mtx_unlock(&l->mtx);
+		return;
+	}
+	nni_list_append(&l->aios, aio);
+	if (nni_list_first(&l->aios) == aio) {
+		ipc_accept_start(l);
 	}
 	nni_mtx_unlock(&l->mtx);
 }
@@ -300,8 +298,18 @@ ipc_listener_close(void *arg)
 		nni_aio_list_remove(aio);
 		nni_aio_finish_error(aio, NNG_ECLOSED);
 	}
-	bool accepting = l->accepting;
 	nni_mtx_unlock(&l->mtx);
+}
+
+static void
+ipc_listener_stop(void *arg)
+{
+	ipc_listener *l = arg;
+
+	ipc_listener_close(l);
+
+	nni_mtx_lock(&l->mtx);
+	bool accepting = l->accepting;
 
 	// This craziness because CancelIoEx on ConnectNamedPipe
 	// seems to be incredibly unreliable. It does work, sometimes,
@@ -309,6 +317,7 @@ ipc_listener_close(void *arg)
 	// to be retired in favor of UNIX domain sockets anyway.
 
 	while (accepting) {
+		nni_mtx_unlock(&l->mtx);
 		if (!CancelIoEx(l->f, &l->io.olpd)) {
 			// operation not found probably
 			// We just inject a safety sleep to
@@ -323,8 +332,8 @@ ipc_listener_close(void *arg)
 		nng_msleep(100);
 		nni_mtx_lock(&l->mtx);
 		accepting = l->accepting;
-		nni_mtx_unlock(&l->mtx);
 	}
+	nni_mtx_unlock(&l->mtx);
 	DisconnectNamedPipe(l->f);
 	CloseHandle(l->f);
 }
@@ -360,6 +369,7 @@ nni_ipc_listener_alloc(nng_stream_listener **lp, const nng_url *url)
 	l->sec_attr.bInheritHandle       = FALSE;
 	l->sa.s_ipc.sa_family            = NNG_AF_IPC;
 	l->sl.sl_free                    = ipc_listener_free;
+	l->sl.sl_stop                    = ipc_listener_stop;
 	l->sl.sl_close                   = ipc_listener_close;
 	l->sl.sl_listen                  = ipc_listener_listen;
 	l->sl.sl_accept                  = ipc_listener_accept;

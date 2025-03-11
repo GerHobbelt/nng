@@ -155,12 +155,12 @@ httpecho(nng_aio *aio)
 	if (((rv = nng_http_res_alloc(&res)) != 0) ||
 	    ((rv = nng_http_res_copy_data(res, body, len)) != 0) ||
 	    ((rv = nng_http_res_set_header(
-	          res, "Content-type", "text/plain")) != 0) ||
-	    ((rv = nng_http_res_set_status(res, NNG_HTTP_STATUS_OK)) != 0)) {
+	          res, "Content-type", "text/plain")) != 0)) {
 		nng_http_res_free(res);
 		nng_aio_finish(aio, rv);
 		return;
 	}
+	nng_http_res_set_status(res, NNG_HTTP_STATUS_OK);
 	nng_aio_set_output(aio, 0, res);
 	nng_aio_finish(aio, 0);
 }
@@ -339,6 +339,21 @@ test_server_missing_host(void)
 }
 
 void
+test_server_method_too_long(void)
+{
+	nng_http_handler *h;
+
+	NUTS_PASS(nng_http_handler_alloc_static(
+	    &h, "/home.html", doc1, strlen(doc1), "text/html"));
+
+	nng_http_handler_set_method(h,
+	    "THISMETHODISFARFARTOOLONGTOBEVALIDASAMETHODASITISLONGER"
+	    "THANTHIRTYTWOBYTES");
+
+	nng_http_handler_free(h);
+}
+
+void
 test_server_wrong_method(void)
 {
 	struct server_test st;
@@ -349,7 +364,7 @@ test_server_wrong_method(void)
 
 	server_setup(&st, h);
 
-	NUTS_PASS(nng_http_req_set_method(st.req, "POST"));
+	nng_http_req_set_method(st.req, "POST");
 	NUTS_PASS(nng_http_req_set_uri(st.req, "/home.html"));
 	nng_http_conn_write_req(st.conn, st.req, st.aio);
 
@@ -379,14 +394,14 @@ test_server_post_handler(void)
 	void              *data;
 
 	NUTS_PASS(nng_http_handler_alloc(&h, "/post", httpecho));
-	NUTS_PASS(nng_http_handler_set_method(h, "POST"));
+	nng_http_handler_set_method(h, "POST");
 
 	server_setup(&st, h);
 
 	snprintf(txdata, sizeof(txdata), "1234");
 	nng_http_req_set_uri(st.req, "/post");
 	nng_http_req_set_data(st.req, txdata, strlen(txdata));
-	NUTS_PASS(nng_http_req_set_method(st.req, "POST"));
+	nng_http_req_set_method(st.req, "POST");
 	NUTS_PASS(httpdo(st.url, st.req, st.res, (void **) &rxdata, &size));
 	NUTS_TRUE(nng_http_res_get_status(st.res) == NNG_HTTP_STATUS_OK);
 	NUTS_TRUE(size == strlen(txdata));
@@ -396,7 +411,7 @@ test_server_post_handler(void)
 	server_reset(&st);
 
 	NUTS_PASS(nng_http_req_set_uri(st.req, "/post"));
-	NUTS_PASS(nng_http_req_set_method(st.req, "GET"));
+	nng_http_req_set_method(st.req, "GET");
 	NUTS_PASS(nng_http_req_set_data(st.req, txdata, strlen(txdata)));
 
 	NUTS_PASS(httpdo(st.url, st.req, st.res, &data, &size));
@@ -451,7 +466,7 @@ test_server_tree_redirect(void)
 	// We'll use a 303 to ensure codes carry thru
 	NUTS_PASS(nng_http_handler_alloc_redirect(
 	    &h, "/here", 303, "http://127.0.0.1/there"));
-	NUTS_PASS(nng_http_handler_set_tree(h));
+	nng_http_handler_set_tree(h);
 	server_setup(&st, h);
 
 	NUTS_PASS(nng_http_req_set_uri(st.req, "/here/i/go/again"));
@@ -487,7 +502,7 @@ test_server_post_redirect(void)
 	snprintf(txdata, sizeof(txdata), "1234");
 	NUTS_PASS(nng_http_req_set_uri(st.req, "/here"));
 	nng_http_req_set_data(st.req, txdata, strlen(txdata));
-	NUTS_PASS(nng_http_req_set_method(st.req, "POST"));
+	nng_http_req_set_method(st.req, "POST");
 	NUTS_PASS(httpdo(st.url, st.req, st.res, (void **) &data, &size));
 	NUTS_TRUE(nng_http_res_get_status(st.res) == 301);
 	dest = nng_http_res_get_header(st.res, "Location");
@@ -507,14 +522,14 @@ test_server_post_echo_tree(void)
 	char              *rxdata;
 
 	NUTS_PASS(nng_http_handler_alloc(&h, "/", httpecho));
-	NUTS_PASS(nng_http_handler_set_method(h, "POST"));
-	NUTS_PASS(nng_http_handler_set_tree(h));
+	nng_http_handler_set_method(h, "POST");
+	nng_http_handler_set_tree(h);
 
 	server_setup(&st, h);
 
 	snprintf(txdata, sizeof(txdata), "1234");
 	nng_http_req_set_data(st.req, txdata, strlen(txdata));
-	NUTS_PASS(nng_http_req_set_method(st.req, "POST"));
+	nng_http_req_set_method(st.req, "POST");
 	NUTS_PASS(nng_http_req_set_uri(st.req, "/some_sub/directory"));
 	NUTS_PASS(httpdo(st.url, st.req, st.res, (void **) &rxdata, &size));
 	NUTS_TRUE(nng_http_res_get_status(st.res) == NNG_HTTP_STATUS_OK);
@@ -574,20 +589,20 @@ test_server_multiple_trees(void)
 	NUTS_PASS(nni_file_put(file2, doc2, strlen(doc2)));
 
 	NUTS_PASS(nng_http_handler_alloc_directory(&h, "/", workdir));
-	NUTS_PASS(nng_http_handler_set_tree(h));
+	nng_http_handler_set_tree(h);
 	server_setup(&st, h);
 
 	NUTS_PASS(nng_http_handler_alloc_directory(&h, "/", workdir));
-	NUTS_PASS(nng_http_handler_set_tree(h));
+	nng_http_handler_set_tree(h);
 	NUTS_FAIL(nng_http_server_add_handler(st.s, h), NNG_EADDRINUSE);
 	nng_http_handler_free(h);
 
 	NUTS_PASS(nng_http_handler_alloc_directory(&h, "/subdir", workdir2));
-	NUTS_PASS(nng_http_handler_set_tree(h));
+	nng_http_handler_set_tree(h);
 	NUTS_PASS(nng_http_server_add_handler(st.s, h));
 
 	NUTS_PASS(nng_http_handler_alloc_directory(&h, "/subdir", workdir2));
-	NUTS_PASS(nng_http_handler_set_tree(h));
+	nng_http_handler_set_tree(h);
 	NUTS_FAIL(nng_http_server_add_handler(st.s, h), NNG_EADDRINUSE);
 	nng_http_handler_free(h);
 
@@ -852,7 +867,7 @@ test_serve_index_not_post(void)
 	server_setup(&st, h);
 
 	NUTS_PASS(nng_http_req_set_uri(st.req, "/subdir2/index.html"));
-	NUTS_PASS(nng_http_req_set_method(st.req, "POST"));
+	nng_http_req_set_method(st.req, "POST");
 	NUTS_PASS(httpget(&st, &data, &size, &stat, &ctype));
 	NUTS_TRUE(stat == NNG_HTTP_STATUS_METHOD_NOT_ALLOWED);
 	nng_strfree(ctype);
@@ -898,6 +913,7 @@ NUTS_TESTS = {
 	{ "server bad version", test_server_bad_version },
 	{ "server missing host", test_server_missing_host },
 	{ "server wrong method", test_server_wrong_method },
+	{ "server method too long", test_server_method_too_long },
 	{ "server post handler", test_server_post_handler },
 	{ "server get redirect", test_server_get_redirect },
 	{ "server tree redirect", test_server_tree_redirect },

@@ -1,5 +1,5 @@
 //
-// Copyright 2023 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
 //
 // This software is supplied under the terms of the MIT License, a
 // copy of which should be located in the distribution where this
@@ -63,6 +63,12 @@ sfd_listener_close(void *arg)
 	nni_mtx_unlock(&l->mtx);
 }
 
+static void
+sfd_listener_stop(void *arg)
+{
+	sfd_listener_close(arg);
+}
+
 static int
 sfd_listener_listen(void *arg)
 {
@@ -109,12 +115,12 @@ static void
 sfd_listener_accept(void *arg, nng_aio *aio)
 {
 	sfd_listener *l = arg;
-	int           rv;
 
-	if (nni_aio_begin(aio) != 0) {
+	nni_mtx_lock(&l->mtx);
+	if (!nni_aio_start(aio, sfd_cancel_accept, l)) {
+		nni_mtx_unlock(&l->mtx);
 		return;
 	}
-	nni_mtx_lock(&l->mtx);
 	if (l->closed) {
 		nni_mtx_unlock(&l->mtx);
 		nni_aio_finish_error(aio, NNG_ECLOSED);
@@ -123,8 +129,6 @@ sfd_listener_accept(void *arg, nng_aio *aio)
 
 	if (l->listen_cnt) {
 		sfd_start_conn(l, aio);
-	} else if ((rv = nni_aio_schedule(aio, sfd_cancel_accept, l)) != 0) {
-		nni_aio_finish_error(aio, rv);
 	} else {
 		nni_aio_list_append(&l->accept_q, aio);
 	}
@@ -222,6 +226,7 @@ nni_sfd_listener_alloc(nng_stream_listener **lp, const nng_url *url)
 
 	l->ops.sl_free   = sfd_listener_free;
 	l->ops.sl_close  = sfd_listener_close;
+	l->ops.sl_stop   = sfd_listener_stop;
 	l->ops.sl_listen = sfd_listener_listen;
 	l->ops.sl_accept = sfd_listener_accept;
 	l->ops.sl_get    = sfd_listener_get;

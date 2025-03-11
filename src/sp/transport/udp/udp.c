@@ -869,6 +869,7 @@ udp_rx_cb(void *arg)
 		switch (nni_aio_result(aio)) {
 		case NNG_ECLOSED:
 		case NNG_ECANCELED:
+		case NNG_ESTOPPED:
 			nni_mtx_unlock(&ep->mtx);
 			return;
 		case NNG_ETIMEDOUT:
@@ -1107,6 +1108,10 @@ udp_ep_fini(void *arg)
 	nni_aio_fini(&ep->tx_aio);
 	nni_aio_fini(&ep->rx_aio);
 
+	if (ep->udp != NULL) {
+		nni_udp_close(ep->udp);
+	}
+
 	for (int i = 0; i < ep->tx_ring.size; i++) {
 		nni_msg_free(ep->tx_ring.descs[i].payload);
 		ep->tx_ring.descs[i].payload = NULL;
@@ -1166,10 +1171,6 @@ udp_ep_stop(void *arg)
 
 	// finally close the tx channel
 	nni_aio_stop(&ep->tx_aio);
-
-	if (ep->udp != NULL) {
-		nni_udp_close(ep->udp);
-	}
 }
 
 // timer handler - sends out additional creqs as needed,
@@ -1183,9 +1184,18 @@ udp_timer_cb(void *arg)
 
 	nni_mtx_lock(&ep->mtx);
 	rv = nni_aio_result(&ep->timeaio);
-	if ((rv == NNG_ECLOSED) || (rv == NNG_ECANCELED) || ep->closed) {
+	switch (rv) {
+	case NNG_ECLOSED:
+	case NNG_ECANCELED:
+	case NNG_ESTOPPED:
 		nni_mtx_unlock(&ep->mtx);
 		return;
+	default:
+		if (ep->closed) {
+			nni_mtx_unlock(&ep->mtx);
+			return;
+		}
+		break;
 	}
 
 	uint32_t     cursor  = 0;
@@ -1387,9 +1397,9 @@ udp_check_url(nng_url *url, bool listen)
 }
 
 static int
-udp_dialer_init(void **dp, nng_url *url, nni_dialer *ndialer)
+udp_dialer_init(void *arg, nng_url *url, nni_dialer *ndialer)
 {
-	udp_ep   *ep = (void *) dp;
+	udp_ep   *ep = arg;
 	int       rv;
 	nni_sock *sock = nni_dialer_sock(ndialer);
 
@@ -1406,9 +1416,9 @@ udp_dialer_init(void **dp, nng_url *url, nni_dialer *ndialer)
 }
 
 static int
-udp_listener_init(void **lp, nng_url *url, nni_listener *nlistener)
+udp_listener_init(void *arg, nng_url *url, nni_listener *nlistener)
 {
-	udp_ep   *ep = (void *) lp;
+	udp_ep   *ep = arg;
 	int       rv;
 	nni_sock *sock = nni_listener_sock(nlistener);
 
@@ -1507,12 +1517,12 @@ static void
 udp_ep_connect(void *arg, nni_aio *aio)
 {
 	udp_ep *ep = arg;
-	int     rv;
 
-	if (nni_aio_begin(aio) != 0) {
+	nni_mtx_lock(&ep->mtx);
+	if (!nni_aio_start(aio, udp_ep_cancel, ep)) {
+		nni_mtx_unlock(&ep->mtx);
 		return;
 	}
-	nni_mtx_lock(&ep->mtx);
 	if (ep->closed) {
 		nni_mtx_unlock(&ep->mtx);
 		nni_aio_finish_error(aio, NNG_ECLOSED);
@@ -1525,12 +1535,6 @@ udp_ep_connect(void *arg, nni_aio *aio)
 	}
 	NNI_ASSERT(nni_list_empty(&ep->connaios));
 	ep->dialer = true;
-
-	if ((rv = nni_aio_schedule(aio, udp_ep_cancel, ep)) != 0) {
-		nni_mtx_unlock(&ep->mtx);
-		nni_aio_finish_error(aio, rv);
-		return;
-	}
 
 	nni_list_append(&ep->connaios, aio);
 

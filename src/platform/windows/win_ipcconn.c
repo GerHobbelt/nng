@@ -163,11 +163,8 @@ static void
 ipc_recv(void *arg, nni_aio *aio)
 {
 	ipc_conn *c = arg;
-	int       rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 	nni_mtx_lock(&c->mtx);
 	if (c->closed) {
 		nni_mtx_unlock(&c->mtx);
@@ -175,14 +172,13 @@ ipc_recv(void *arg, nni_aio *aio)
 		return;
 	}
 	if (c->recv_fail) {
-		rv = c->recv_rv;
+		int rv = c->recv_rv;
 		nni_mtx_unlock(&c->mtx);
 		nni_aio_finish_error(aio, rv);
 		return;
 	}
-	if ((rv = nni_aio_schedule(aio, ipc_recv_cancel, c)) != 0) {
+	if (!nni_aio_start(aio, ipc_recv_cancel, c)) {
 		nni_mtx_unlock(&c->mtx);
-		nni_aio_finish_error(aio, rv);
 		return;
 	}
 	nni_list_append(&c->recv_aios, aio);
@@ -305,15 +301,11 @@ static void
 ipc_send(void *arg, nni_aio *aio)
 {
 	ipc_conn *c = arg;
-	int       rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 	nni_mtx_lock(&c->mtx);
-	if ((rv = nni_aio_schedule(aio, ipc_send_cancel, c)) != 0) {
+	if (!nni_aio_start(aio, ipc_send_cancel, c)) {
 		nni_mtx_unlock(&c->mtx);
-		nni_aio_finish_error(aio, rv);
 		return;
 	}
 	nni_list_append(&c->send_aios, aio);
@@ -352,7 +344,7 @@ ipc_close(void *arg)
 }
 
 static void
-ipc_free(void *arg)
+ipc_stop(void *arg)
 {
 	ipc_conn *c = arg;
 	nni_aio  *aio;
@@ -381,6 +373,14 @@ ipc_free(void *arg)
 		DisconnectNamedPipe(f);
 		CloseHandle(f);
 	}
+}
+
+static void
+ipc_free(void *arg)
+{
+	ipc_conn *c = arg;
+
+	ipc_stop(c);
 
 	nni_cv_fini(&c->cv);
 	nni_mtx_fini(&c->mtx);
@@ -460,6 +460,7 @@ nni_win_ipc_init(
 	c->sa             = *sa;
 	c->stream.s_free  = ipc_free;
 	c->stream.s_close = ipc_close;
+	c->stream.s_stop  = ipc_stop;
 	c->stream.s_send  = ipc_send;
 	c->stream.s_recv  = ipc_recv;
 	c->stream.s_get   = ipc_get;

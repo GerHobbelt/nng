@@ -10,6 +10,7 @@
 //
 
 #include "core/nng_impl.h"
+#include "platform/posix/posix_pollq.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -31,9 +32,9 @@ static void
 tcp_dowrite(nni_tcp_conn *c)
 {
 	nni_aio *aio;
-	int      fd;
+	int      fd = nni_posix_pfd_fd(&c->pfd);
 
-	if (c->closed || ((fd = nni_posix_pfd_fd(c->pfd)) < 0)) {
+	if (c->closed) {
 		return;
 	}
 
@@ -100,9 +101,9 @@ static void
 tcp_doread(nni_tcp_conn *c)
 {
 	nni_aio *aio;
-	int      fd;
+	int      fd = nni_posix_pfd_fd(&c->pfd);
 
-	if (c->closed || ((fd = nni_posix_pfd_fd(c->pfd)) < 0)) {
+	if (c->closed) {
 		return;
 	}
 
@@ -173,9 +174,7 @@ tcp_error(void *arg, int err)
 		nni_aio_list_remove(aio);
 		nni_aio_finish_error(aio, err);
 	}
-	if (c->pfd != NULL) {
-		nni_posix_pfd_close(c->pfd);
-	}
+	nni_posix_pfd_close(&c->pfd);
 	nni_mtx_unlock(&c->mtx);
 }
 
@@ -192,11 +191,18 @@ tcp_close(void *arg)
 			nni_aio_list_remove(aio);
 			nni_aio_finish_error(aio, NNG_ECLOSED);
 		}
-		if (c->pfd != NULL) {
-			nni_posix_pfd_close(c->pfd);
-		}
+		nni_posix_pfd_close(&c->pfd);
 	}
 	nni_mtx_unlock(&c->mtx);
+}
+
+static void
+tcp_stop(void *arg)
+{
+	nni_tcp_conn *c = arg;
+	tcp_close(c);
+
+	nni_posix_pfd_stop(&c->pfd);
 }
 
 // tcp_fini may block briefly waiting for the pollq thread.
@@ -205,10 +211,8 @@ static void
 tcp_fini(void *arg)
 {
 	nni_tcp_conn *c = arg;
-	tcp_close(c);
-	if (c->pfd != NULL) {
-		nni_posix_pfd_fini(c->pfd);
-	}
+	tcp_stop(c);
+	nni_posix_pfd_fini(&c->pfd);
 	nni_mtx_fini(&c->mtx);
 
 	if (c->dialer != NULL) {
@@ -221,6 +225,7 @@ static nni_reap_list tcp_reap_list = {
 	.rl_offset = offsetof(nni_tcp_conn, reap),
 	.rl_func   = tcp_fini,
 };
+
 static void
 tcp_free(void *arg)
 {
@@ -229,11 +234,15 @@ tcp_free(void *arg)
 }
 
 static void
-tcp_cb(nni_posix_pfd *pfd, unsigned events, void *arg)
+tcp_cb(void *arg, unsigned events)
 {
 	nni_tcp_conn *c = arg;
 
-	if (events & (NNI_POLL_HUP | NNI_POLL_ERR | NNI_POLL_INVAL)) {
+	if (c->dial_aio != NULL) {
+		nni_posix_tcp_dial_cb(c, events);
+		return;
+	}
+	if ((events & (NNI_POLL_HUP | NNI_POLL_ERR | NNI_POLL_INVAL)) != 0) {
 		tcp_error(c, NNG_ECONNSHUT);
 		return;
 	}
@@ -252,7 +261,7 @@ tcp_cb(nni_posix_pfd *pfd, unsigned events, void *arg)
 		events |= NNI_POLL_IN;
 	}
 	if ((!c->closed) && (events != 0)) {
-		nni_posix_pfd_arm(pfd, events);
+		nni_posix_pfd_arm(&c->pfd, events);
 	}
 	nni_mtx_unlock(&c->mtx);
 }
@@ -274,16 +283,11 @@ static void
 tcp_send(void *arg, nni_aio *aio)
 {
 	nni_tcp_conn *c = arg;
-	int           rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 	nni_mtx_lock(&c->mtx);
-
-	if ((rv = nni_aio_schedule(aio, tcp_cancel, c)) != 0) {
+	if (!nni_aio_start(aio, tcp_cancel, c)) {
 		nni_mtx_unlock(&c->mtx);
-		nni_aio_finish_error(aio, rv);
 		return;
 	}
 	nni_aio_list_append(&c->writeq, aio);
@@ -294,7 +298,7 @@ tcp_send(void *arg, nni_aio *aio)
 		// means we didn't finish the job, so arm the poller to
 		// complete us.
 		if (nni_list_first(&c->writeq) == aio) {
-			nni_posix_pfd_arm(c->pfd, POLLOUT);
+			nni_posix_pfd_arm(&c->pfd, NNI_POLL_OUT);
 		}
 	}
 	nni_mtx_unlock(&c->mtx);
@@ -304,16 +308,11 @@ static void
 tcp_recv(void *arg, nni_aio *aio)
 {
 	nni_tcp_conn *c = arg;
-	int           rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 	nni_mtx_lock(&c->mtx);
-
-	if ((rv = nni_aio_schedule(aio, tcp_cancel, c)) != 0) {
+	if (!nni_aio_start(aio, tcp_cancel, c)) {
 		nni_mtx_unlock(&c->mtx);
-		nni_aio_finish_error(aio, rv);
 		return;
 	}
 	nni_aio_list_append(&c->readq, aio);
@@ -328,7 +327,7 @@ tcp_recv(void *arg, nni_aio *aio)
 		// means we didn't finish the job, so arm the poller to
 		// complete us.
 		if (nni_list_first(&c->readq) == aio) {
-			nni_posix_pfd_arm(c->pfd, POLLIN);
+			nni_posix_pfd_arm(&c->pfd, NNI_POLL_IN);
 		}
 	}
 	nni_mtx_unlock(&c->mtx);
@@ -340,7 +339,7 @@ tcp_get_peername(void *arg, void *buf, size_t *szp, nni_type t)
 	nni_tcp_conn           *c = arg;
 	struct sockaddr_storage ss;
 	socklen_t               len = sizeof(ss);
-	int                     fd  = nni_posix_pfd_fd(c->pfd);
+	int                     fd  = nni_posix_pfd_fd(&c->pfd);
 	int                     rv;
 	nng_sockaddr            sa;
 
@@ -359,7 +358,7 @@ tcp_get_sockname(void *arg, void *buf, size_t *szp, nni_type t)
 	nni_tcp_conn           *c = arg;
 	struct sockaddr_storage ss;
 	socklen_t               len = sizeof(ss);
-	int                     fd  = nni_posix_pfd_fd(c->pfd);
+	int                     fd  = nni_posix_pfd_fd(&c->pfd);
 	int                     rv;
 	nng_sockaddr            sa;
 
@@ -376,7 +375,7 @@ static int
 tcp_get_nodelay(void *arg, void *buf, size_t *szp, nni_type t)
 {
 	nni_tcp_conn *c     = arg;
-	int           fd    = nni_posix_pfd_fd(c->pfd);
+	int           fd    = nni_posix_pfd_fd(&c->pfd);
 	int           val   = 0;
 	socklen_t     valsz = sizeof(val);
 
@@ -391,7 +390,7 @@ static int
 tcp_get_keepalive(void *arg, void *buf, size_t *szp, nni_type t)
 {
 	nni_tcp_conn *c     = arg;
-	int           fd    = nni_posix_pfd_fd(c->pfd);
+	int           fd    = nni_posix_pfd_fd(&c->pfd);
 	int           val   = 0;
 	socklen_t     valsz = sizeof(val);
 
@@ -439,7 +438,7 @@ tcp_set(void *arg, const char *name, const void *buf, size_t sz, nni_type t)
 }
 
 int
-nni_posix_tcp_alloc(nni_tcp_conn **cp, nni_tcp_dialer *d)
+nni_posix_tcp_alloc(nni_tcp_conn **cp, nni_tcp_dialer *d, int fd)
 {
 	nni_tcp_conn *c;
 	if ((c = NNI_ALLOC_STRUCT(c)) == NULL) {
@@ -452,8 +451,10 @@ nni_posix_tcp_alloc(nni_tcp_conn **cp, nni_tcp_dialer *d)
 	nni_mtx_init(&c->mtx);
 	nni_aio_list_init(&c->readq);
 	nni_aio_list_init(&c->writeq);
+	nni_posix_pfd_init(&c->pfd, fd, tcp_cb, c);
 
 	c->stream.s_free  = tcp_free;
+	c->stream.s_stop  = tcp_stop;
 	c->stream.s_close = tcp_close;
 	c->stream.s_recv  = tcp_recv;
 	c->stream.s_send  = tcp_send;
@@ -465,19 +466,11 @@ nni_posix_tcp_alloc(nni_tcp_conn **cp, nni_tcp_dialer *d)
 }
 
 void
-nni_posix_tcp_init(nni_tcp_conn *c, nni_posix_pfd *pfd)
-{
-	c->pfd = pfd;
-}
-
-void
 nni_posix_tcp_start(nni_tcp_conn *c, int nodelay, int keepalive)
 {
 	// Configure the initial socket options.
-	(void) setsockopt(nni_posix_pfd_fd(c->pfd), IPPROTO_TCP, TCP_NODELAY,
+	(void) setsockopt(nni_posix_pfd_fd(&c->pfd), IPPROTO_TCP, TCP_NODELAY,
 	    &nodelay, sizeof(int));
-	(void) setsockopt(nni_posix_pfd_fd(c->pfd), SOL_SOCKET, SO_KEEPALIVE,
+	(void) setsockopt(nni_posix_pfd_fd(&c->pfd), SOL_SOCKET, SO_KEEPALIVE,
 	    &keepalive, sizeof(int));
-
-	nni_posix_pfd_set_cb(c->pfd, tcp_cb, c);
 }

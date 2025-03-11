@@ -1,7 +1,7 @@
 # Migrating from NNG 1.x
 
-There are some incompatibities from NNG 1.x.
-This guide should help in migrating applications to use NNG 2.0.
+There are some incompatibities from NNG 1.x, and applications must make certain changes for NNG 2.0.
+This guide should help with this migration.
 
 ## Nanomsg Compatibility
 
@@ -12,6 +12,26 @@ See the [Migrating From libnanomsg](nanomsg.md) chapter for details.
 
 It is now required for applications to initialize the library explicitly before using it.
 This is done using the [`nng_init`] function.
+
+## New AIO Error Code NNG_ESTOPPED
+
+When an operation fails with [`NNG_ESTOPPED`], it means that the associated [`nni_aio`] object has
+been permanently stopped and must not be reused. Applications must watch for this error code, and
+not resubmit an operation that returns it. This is particularly important for callbacks that automatically
+resubmit operations. Failure to observe this rule will lead to an infinite loop
+as any further operations on the object will fail immediately with `NNG_ESTOPPED`.
+
+## AIO Provider API changes
+
+The API used for providers for asynchronous I/O operations has changed slightly.
+
+- The `nng_aio_begin` function is removed. However a new [`nng_aio_reset`] function should be called
+  instead, before performing any other operations on an _aio_ object. (This simply clears certain fields.)
+- The `nng_aio_defer` function is replaced, with a very [`nng_aio_start`] function. However, this function
+  has slightly different semantics. It will automatically call the callback if the operation cannot be
+  scheduled.
+- Be aware of the new `NNG_ESTOPPED` error code, for operations on a handle that is being torn down by
+  the consumer.
 
 ## Transport Specific Functions
 
@@ -218,6 +238,32 @@ accessors functions are provided:
 - `u_requri` is removed - it can be easily formulated from the other fields.
 - `u_host` is removed - use [`nng_url_hostname`] and [`nng_url_port`] to construct if needed
 - `u_rawurl` is removed - a "cooked" URL can be obtained from the new [`nng_url_sprintf`] function.
+
+## HTTP API
+
+A few limits on string lengths of certain values are now applied, which allows us to preallocate values
+and eliminate certain unreasonable error paths. If values longer than these are supplied in certain APIs
+they may be silently truncated to the limit:
+
+- Hostnames are limited per RFC 1035 to 253 characters (not including terminating "." or zero byte.)
+- HTTP Method names are limited to 32 bytes (the longest IANA registered method is currently 18 bytes, used for WebDAV.)
+- The fixed part of URI pathnames used with HTTP handlers is limited to 1024 bytes. (Longer URIs may be accepted
+  by using [`nng_http_handler_set_tree`] and matching a parent of the directory component.)
+
+The following API calls have changed so that they are `void` returns, and cannot fail.
+They may silently truncate data.
+
+- [`nng_http_req_set_method`]
+- [`nng_http_res_set_status`]
+- [`nng_http_handler_collect_body`]
+- [`nng_http_handler_set_data`]
+- [`nng_http_handler_set_host`]
+- [`nng_http_handler_set_method`]
+- [`nng_http_handler_set_tree`]
+- [`nng_http_handler_set_tree_exclusive`]
+
+The HTTP handler objects may not be modified once in use. Previously this would fail with `NNG_EBUSY`.
+These checks are removed now, but debug builds will assert if an application tries to do so.
 
 ## Security Descriptors (Windows Only)
 

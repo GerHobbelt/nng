@@ -95,9 +95,16 @@ static nni_reap_list tcp_dialer_reap_list = {
 };
 
 void
-nni_tcp_dialer_fini(nni_tcp_dialer *d)
+nni_tcp_dialer_stop(nni_tcp_dialer *d)
 {
 	nni_tcp_dialer_close(d);
+	// TODO: wait for conn_io.olpd?
+}
+
+void
+nni_tcp_dialer_fini(nni_tcp_dialer *d)
+{
+	nni_tcp_dialer_stop(d);
 	nni_mtx_lock(&d->mtx);
 	if (!nni_list_empty(&d->aios)) {
 		nni_mtx_unlock(&d->mtx);
@@ -155,6 +162,8 @@ tcp_dial_cb(nni_win_io *io, int rv, size_t cnt)
 	nni_mtx_unlock(&d->mtx);
 
 	if (rv != 0) {
+		nng_stream_close(&c->ops);
+		nng_stream_stop(&c->ops);
 		nng_stream_free(&c->ops);
 		nni_aio_finish_error(aio, rv);
 	} else {
@@ -187,9 +196,7 @@ nni_tcp_dial(nni_tcp_dialer *d, const nni_sockaddr *sa, nni_aio *aio)
 	nni_tcp_conn    *c;
 	int              rv;
 
-	if (nni_aio_begin(aio) != 0) {
-		return;
-	}
+	nni_aio_reset(aio);
 
 	if ((len = nni_win_nn2sockaddr(&ss, sa)) <= 0) {
 		nni_aio_finish_error(aio, NNG_EADDRINVAL);
@@ -237,14 +244,13 @@ nni_tcp_dial(nni_tcp_dialer *d, const nni_sockaddr *sa, nni_aio *aio)
 		return;
 	}
 
-	c->dialer = d;
-	nni_aio_set_prov_data(aio, c);
-	if ((rv = nni_aio_schedule(aio, tcp_dial_cancel, d)) != 0) {
+	if (!nni_aio_start(aio, tcp_dial_cancel, d)) {
 		nni_mtx_unlock(&d->mtx);
 		nng_stream_free(&c->ops);
-		nni_aio_finish_error(aio, rv);
 		return;
 	}
+	nni_aio_set_prov_data(aio, c);
+	c->dialer   = d;
 	c->conn_aio = aio;
 	nni_aio_list_append(&d->aios, aio);
 
