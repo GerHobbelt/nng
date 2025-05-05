@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 // Copyright 2018 Devolutions <info@devolutions.net>
 //
@@ -161,7 +161,7 @@ tcp_listener_cb(void *arg, unsigned events)
 }
 
 static void
-tcp_listener_cancel(nni_aio *aio, void *arg, int rv)
+tcp_listener_cancel(nni_aio *aio, void *arg, nng_err rv)
 {
 	tcp_listener *l = arg;
 
@@ -506,7 +506,7 @@ tcp_listener_set(
 	return (nni_setopt(tcp_listener_options, name, arg, buf, sz, t));
 }
 
-static int
+static nng_err
 tcp_listener_alloc_addr(nng_stream_listener **lp, const nng_sockaddr *sa)
 {
 	tcp_listener *l;
@@ -532,16 +532,16 @@ tcp_listener_alloc_addr(nng_stream_listener **lp, const nng_sockaddr *sa)
 	l->ops.sl_set    = tcp_listener_set;
 
 	*lp = (void *) l;
-	return (0);
+	return (NNG_OK);
 }
 
-int
+nng_err
 nni_tcp_listener_alloc(nng_stream_listener **lp, const nng_url *url)
 {
-	int          rv;
+	nng_err      rv;
 	nng_sockaddr sa;
 
-	if ((rv = nni_url_to_address(&sa, url)) != 0) {
+	if ((rv = nni_url_to_address(&sa, url)) != NNG_OK) {
 		return (rv);
 	}
 

@@ -547,7 +547,7 @@ ws_start_write(nni_ws *ws)
 }
 
 static void
-ws_cancel_close(nni_aio *aio, void *arg, int rv)
+ws_cancel_close(nni_aio *aio, void *arg, nng_err rv)
 {
 	nni_ws *ws = arg;
 	nni_mtx_lock(&ws->mtx);
@@ -653,7 +653,7 @@ ws_write_cb(void *arg)
 }
 
 static void
-ws_write_cancel(nni_aio *aio, void *arg, int rv)
+ws_write_cancel(nni_aio *aio, void *arg, nng_err rv)
 {
 	nni_ws   *ws = arg;
 	ws_frame *frame;
@@ -1108,7 +1108,7 @@ ws_read_cb(void *arg)
 }
 
 static void
-ws_read_cancel(nni_aio *aio, void *arg, int rv)
+ws_read_cancel(nni_aio *aio, void *arg, nng_err rv)
 {
 	nni_ws *ws = arg;
 
@@ -1607,7 +1607,7 @@ err:
 }
 
 static void
-ws_accept_cancel(nni_aio *aio, void *arg, int rv)
+ws_accept_cancel(nni_aio *aio, void *arg, nng_err rv)
 {
 	nni_ws_listener *l = arg;
 
@@ -1998,11 +1998,11 @@ ws_listener_set_tls(void *arg, nng_tls_config *cfg)
 	return (nni_http_server_set_tls(l->server, cfg));
 }
 
-int
+nng_err
 nni_ws_listener_alloc(nng_stream_listener **wslp, const nng_url *url)
 {
 	nni_ws_listener *l;
-	int              rv;
+	nng_err          rv;
 	char            *host;
 
 	if ((l = NNI_ALLOC_STRUCT(l)) == NULL) {
@@ -2054,7 +2054,7 @@ nni_ws_listener_alloc(nng_stream_listener **wslp, const nng_url *url)
 	l->ops.sl_get_tls = ws_listener_get_tls;
 	l->ops.sl_set_tls = ws_listener_set_tls;
 	*wslp             = (void *) l;
-	return (0);
+	return (NNG_OK);
 }
 
 void
@@ -2203,7 +2203,7 @@ ws_dialer_free(void *arg)
 }
 
 static void
-ws_dial_cancel(nni_aio *aio, void *arg, int rv)
+ws_dial_cancel(nni_aio *aio, void *arg, nng_err rv)
 {
 	nni_ws *ws = arg;
 
@@ -2526,11 +2526,11 @@ ws_dialer_set_tls(void *arg, nng_tls_config *cfg)
 	return (nni_http_client_set_tls(d->client, cfg));
 }
 
-int
+nng_err
 nni_ws_dialer_alloc(nng_stream_dialer **dp, const nng_url *url)
 {
 	nni_ws_dialer *d;
-	int            rv;
+	nng_err        rv;
 
 	if ((d = NNI_ALLOC_STRUCT(d)) == NULL) {
 		return (NNG_ENOMEM);
@@ -2564,7 +2564,7 @@ nni_ws_dialer_alloc(nng_stream_dialer **dp, const nng_url *url)
 	d->ops.sd_set_tls = ws_dialer_set_tls;
 	d->ops.sd_get_tls = ws_dialer_get_tls;
 	*dp               = (void *) d;
-	return (0);
+	return (NNG_OK);
 }
 
 // Dialer does not get a hook chance, as it can examine the request
