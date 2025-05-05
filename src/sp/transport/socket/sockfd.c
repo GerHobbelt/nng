@@ -682,11 +682,11 @@ error:
 	nni_mtx_unlock(&ep->mtx);
 }
 
-static int
+static nng_err
 sfd_tran_listener_init(void *arg, nng_url *url, nni_listener *nlistener)
 {
 	sfd_tran_ep *ep = arg;
-	int          rv;
+	nng_err      rv;
 	nni_sock    *sock = nni_listener_sock(nlistener);
 
 	ep->nlistener = nlistener;
@@ -715,7 +715,8 @@ sfd_tran_listener_init(void *arg, nng_url *url, nni_listener *nlistener)
 		return (NNG_EADDRINVAL);
 	}
 
-	if ((rv = nng_stream_listener_alloc_url(&ep->listener, url)) != 0) {
+	if ((rv = nng_stream_listener_alloc_url(&ep->listener, url)) !=
+	    NNG_OK) {
 		sfd_tran_ep_fini(ep);
 		return (rv);
 	}
@@ -724,7 +725,7 @@ sfd_tran_listener_init(void *arg, nng_url *url, nni_listener *nlistener)
 	nni_listener_add_stat(nlistener, &ep->st_rcv_max);
 #endif
 
-	return (0);
+	return (NNG_OK);
 }
 
 static void
@@ -739,11 +740,11 @@ sfd_tran_ep_cancel(nni_aio *aio, void *arg, nng_err rv)
 	nni_mtx_unlock(&ep->mtx);
 }
 
-static int
+static nng_err
 sfd_tran_ep_get_recvmaxsz(void *arg, void *v, size_t *szp, nni_opt_type t)
 {
 	sfd_tran_ep *ep = arg;
-	int          rv;
+	nng_err      rv;
 
 	nni_mtx_lock(&ep->mtx);
 	rv = nni_copyout_size(ep->rcvmax, v, szp, t);
@@ -751,13 +752,13 @@ sfd_tran_ep_get_recvmaxsz(void *arg, void *v, size_t *szp, nni_opt_type t)
 	return (rv);
 }
 
-static int
+static nng_err
 sfd_tran_ep_set_recvmaxsz(void *arg, const void *v, size_t sz, nni_opt_type t)
 {
 	sfd_tran_ep *ep = arg;
 	size_t       val;
-	int          rv;
-	if ((rv = nni_copyin_size(&val, v, sz, 0, NNI_MAXSZ, t)) == 0) {
+	nng_err      rv;
+	if ((rv = nni_copyin_size(&val, v, sz, 0, NNI_MAXSZ, t)) == NNG_OK) {
 		nni_mtx_lock(&ep->mtx);
 		ep->rcvmax = val;
 		nni_mtx_unlock(&ep->mtx);
@@ -768,7 +769,7 @@ sfd_tran_ep_set_recvmaxsz(void *arg, const void *v, size_t sz, nni_opt_type t)
 	return (rv);
 }
 
-static int
+static nng_err
 sfd_tran_ep_bind(void *arg, nng_url *url)
 {
 	sfd_tran_ep *ep = arg;
@@ -830,12 +831,12 @@ static const nni_option sfd_tran_ep_opts[] = {
 	},
 };
 
-static int
+static nng_err
 sfd_tran_listener_getopt(
     void *arg, const char *name, void *buf, size_t *szp, nni_type t)
 {
 	sfd_tran_ep *ep = arg;
-	int          rv;
+	nng_err      rv;
 
 	rv = nni_stream_listener_get(ep->listener, name, buf, szp, t);
 	if (rv == NNG_ENOTSUP) {
@@ -844,12 +845,12 @@ sfd_tran_listener_getopt(
 	return (rv);
 }
 
-static int
+static nng_err
 sfd_tran_listener_setopt(
     void *arg, const char *name, const void *buf, size_t sz, nni_type t)
 {
 	sfd_tran_ep *ep = arg;
-	int          rv;
+	nng_err      rv;
 
 	rv = nni_stream_listener_set(ep->listener, name, buf, sz, t);
 	if (rv == NNG_ENOTSUP) {

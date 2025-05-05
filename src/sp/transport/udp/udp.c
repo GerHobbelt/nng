@@ -1044,24 +1044,24 @@ udp_pipe_peer(void *arg)
 	return (p->peer);
 }
 
-static int
+static nng_err
 udp_pipe_get_recvmax(void *arg, void *v, size_t *szp, nni_type t)
 {
 	udp_pipe *p  = arg;
 	udp_ep   *ep = p->ep;
-	int       rv;
+	nng_err   rv;
 	nni_mtx_lock(&ep->mtx);
 	rv = nni_copyout_size(p->rcvmax, v, szp, t);
 	nni_mtx_unlock(&ep->mtx);
 	return (rv);
 }
 
-static int
+static nng_err
 udp_pipe_get_remaddr(void *arg, void *v, size_t *szp, nni_type t)
 {
 	udp_pipe *p  = arg;
 	udp_ep   *ep = p->ep;
-	int       rv;
+	nng_err   rv;
 	nni_mtx_lock(&ep->mtx);
 	rv = nni_copyout_sockaddr(&p->peer_addr, v, szp, t);
 	nni_mtx_unlock(&ep->mtx);
@@ -1390,39 +1390,39 @@ udp_check_url(nng_url *url, bool listen)
 	return (0);
 }
 
-static int
+static nng_err
 udp_dialer_init(void *arg, nng_url *url, nni_dialer *ndialer)
 {
 	udp_ep   *ep = arg;
-	int       rv;
+	nng_err   rv;
 	nni_sock *sock = nni_dialer_sock(ndialer);
 
 	ep->ndialer = ndialer;
-	if ((rv = udp_ep_init(ep, url, sock, ndialer, NULL)) != 0) {
+	if ((rv = udp_ep_init(ep, url, sock, ndialer, NULL)) != NNG_OK) {
 		return (rv);
 	}
 
-	if ((rv = udp_check_url(url, false)) != 0) {
+	if ((rv = udp_check_url(url, false)) != NNG_OK) {
 		return (rv);
 	}
 
-	return (0);
+	return (NNG_OK);
 }
 
-static int
+static nng_err
 udp_listener_init(void *arg, nng_url *url, nni_listener *nlistener)
 {
 	udp_ep   *ep = arg;
-	int       rv;
+	nng_err   rv;
 	nni_sock *sock = nni_listener_sock(nlistener);
 
 	ep->nlistener = nlistener;
-	if ((rv = udp_ep_init(ep, url, sock, NULL, nlistener)) != 0) {
+	if ((rv = udp_ep_init(ep, url, sock, NULL, nlistener)) != NNG_OK) {
 		return (rv);
 	}
 	// Check for invalid URL components.
 	if (((rv = udp_check_url(url, true)) != 0) ||
-	    ((rv = nni_url_to_address(&ep->self_sa, url)) != 0)) {
+	    ((rv = nni_url_to_address(&ep->self_sa, url)) != NNG_OK)) {
 		return (rv);
 	}
 
@@ -1549,7 +1549,7 @@ udp_ep_connect(void *arg, nni_aio *aio)
 	nni_mtx_unlock(&ep->mtx);
 }
 
-static int
+static nng_err
 udp_ep_get_port(void *arg, void *buf, size_t *szp, nni_type t)
 {
 	udp_ep      *ep = arg;
@@ -1586,11 +1586,11 @@ udp_ep_get_port(void *arg, void *buf, size_t *szp, nni_type t)
 	return (nni_copyout_int(port, buf, szp, t));
 }
 
-static int
+static nng_err
 udp_ep_get_locaddr(void *arg, void *v, size_t *szp, nni_opt_type t)
 {
 	udp_ep      *ep = arg;
-	int          rv;
+	nng_err      rv;
 	nng_sockaddr sa;
 
 	if (ep->udp != NULL) {
@@ -1603,11 +1603,11 @@ udp_ep_get_locaddr(void *arg, void *v, size_t *szp, nni_opt_type t)
 	return (rv);
 }
 
-static int
+static nng_err
 udp_ep_get_remaddr(void *arg, void *v, size_t *szp, nni_opt_type t)
 {
 	udp_ep      *ep = arg;
-	int          rv;
+	nng_err      rv;
 	nng_sockaddr sa;
 
 	if (!ep->dialer) {
@@ -1619,11 +1619,11 @@ udp_ep_get_remaddr(void *arg, void *v, size_t *szp, nni_opt_type t)
 	return (rv);
 }
 
-static int
+static nng_err
 udp_ep_get_recvmaxsz(void *arg, void *v, size_t *szp, nni_opt_type t)
 {
 	udp_ep *ep = arg;
-	int     rv;
+	nng_err rv;
 
 	nni_mtx_lock(&ep->mtx);
 	rv = nni_copyout_size(ep->rcvmax, v, szp, t);
@@ -1631,13 +1631,13 @@ udp_ep_get_recvmaxsz(void *arg, void *v, size_t *szp, nni_opt_type t)
 	return (rv);
 }
 
-static int
+static nng_err
 udp_ep_set_recvmaxsz(void *arg, const void *v, size_t sz, nni_opt_type t)
 {
 	udp_ep *ep = arg;
 	size_t  val;
-	int     rv;
-	if ((rv = nni_copyin_size(&val, v, sz, 0, 65000, t)) == 0) {
+	nng_err rv;
+	if ((rv = nni_copyin_size(&val, v, sz, 0, 65000, t)) == NNG_OK) {
 		if ((val == 0) || (val > 65000)) {
 			val = 65000;
 		}
@@ -1653,11 +1653,11 @@ udp_ep_set_recvmaxsz(void *arg, const void *v, size_t sz, nni_opt_type t)
 	return (rv);
 }
 
-static int
+static nng_err
 udp_ep_get_copymax(void *arg, void *v, size_t *szp, nni_opt_type t)
 {
 	udp_ep *ep = arg;
-	int     rv;
+	nng_err rv;
 
 	nni_mtx_lock(&ep->mtx);
 	rv = nni_copyout_size(ep->copymax, v, szp, t);
@@ -1665,13 +1665,13 @@ udp_ep_get_copymax(void *arg, void *v, size_t *szp, nni_opt_type t)
 	return (rv);
 }
 
-static int
+static nng_err
 udp_ep_set_copymax(void *arg, const void *v, size_t sz, nni_opt_type t)
 {
 	udp_ep *ep = arg;
 	size_t  val;
-	int     rv;
-	if ((rv = nni_copyin_size(&val, v, sz, 0, 65000, t)) == 0) {
+	nng_err rv;
+	if ((rv = nni_copyin_size(&val, v, sz, 0, 65000, t)) == NNG_OK) {
 		nni_mtx_lock(&ep->mtx);
 		if (ep->started) {
 			nni_mtx_unlock(&ep->mtx);
@@ -1709,11 +1709,11 @@ udp_ep_start(udp_ep *ep)
 	udp_start_rx(ep);
 }
 
-static int
+static nng_err
 udp_ep_bind(void *arg, nng_url *url)
 {
 	udp_ep *ep = arg;
-	int     rv;
+	nng_err rv;
 
 	nni_mtx_lock(&ep->mtx);
 	if (ep->started) {
@@ -1722,7 +1722,7 @@ udp_ep_bind(void *arg, nng_url *url)
 	}
 
 	rv = nni_udp_open(&ep->udp, &ep->self_sa);
-	if (rv != 0) {
+	if (rv != NNG_OK) {
 		nni_mtx_unlock(&ep->mtx);
 		return (rv);
 	}
@@ -1797,7 +1797,7 @@ static const nni_option udp_ep_opts[] = {
 	},
 };
 
-static int
+static nng_err
 udp_dialer_getopt(
     void *arg, const char *name, void *buf, size_t *szp, nni_type t)
 {
@@ -1806,7 +1806,7 @@ udp_dialer_getopt(
 	return (nni_getopt(udp_ep_opts, name, ep, buf, szp, t));
 }
 
-static int
+static nng_err
 udp_dialer_setopt(
     void *arg, const char *name, const void *buf, size_t sz, nni_type t)
 {
@@ -1815,7 +1815,7 @@ udp_dialer_setopt(
 	return (nni_setopt(udp_ep_opts, name, ep, buf, sz, t));
 }
 
-static int
+static nng_err
 udp_listener_getopt(
     void *arg, const char *name, void *buf, size_t *szp, nni_type t)
 {
@@ -1824,7 +1824,7 @@ udp_listener_getopt(
 	return (nni_getopt(udp_ep_opts, name, ep, buf, szp, t));
 }
 
-static int
+static nng_err
 udp_listener_setopt(
     void *arg, const char *name, const void *buf, size_t sz, nni_type t)
 {

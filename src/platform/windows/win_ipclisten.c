@@ -139,7 +139,7 @@ ipc_accept_cb(nni_win_io *io, int rv, size_t cnt)
 	nni_mtx_unlock(&l->mtx);
 }
 
-static int
+static nng_err
 ipc_listener_set_sec_desc(void *arg, void *desc)
 {
 	ipc_listener *l = arg;
@@ -155,7 +155,7 @@ ipc_listener_set_sec_desc(void *arg, void *desc)
 	}
 	l->sec_attr.lpSecurityDescriptor = desc;
 	nni_mtx_unlock(&l->mtx);
-	return (0);
+	return (NNG_OK);
 }
 
 static int
@@ -191,11 +191,11 @@ ipc_listener_get(
 	return (nni_getopt(ipc_listener_options, name, l, buf, szp, t));
 }
 
-static int
+static nng_err
 ipc_listener_listen(void *arg)
 {
 	ipc_listener *l = arg;
-	int           rv;
+	nng_err       rv;
 	HANDLE        f;
 	char         *path;
 
@@ -209,7 +209,7 @@ ipc_listener_listen(void *arg)
 		return (NNG_ECLOSED);
 	}
 	rv = nni_asprintf(&path, IPC_PIPE_PREFIX "%s", l->sa.s_ipc.sa_path);
-	if (rv != 0) {
+	if (rv != NNG_OK) {
 		nni_mtx_unlock(&l->mtx);
 		return (rv);
 	}
@@ -230,7 +230,7 @@ ipc_listener_listen(void *arg)
 		nni_strfree(path);
 		return (rv);
 	}
-	if ((rv = nni_win_io_register(f)) != 0) {
+	if ((rv = nni_win_io_register(f)) != NNG_OK) {
 		CloseHandle(f);
 		nni_mtx_unlock(&l->mtx);
 		nni_strfree(path);
@@ -241,7 +241,7 @@ ipc_listener_listen(void *arg)
 	l->path    = path;
 	l->started = true;
 	nni_mtx_unlock(&l->mtx);
-	return (0);
+	return (NNG_OK);
 }
 
 static void
