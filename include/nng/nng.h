@@ -202,8 +202,8 @@ struct nng_sockaddr_path {
 struct nng_sockaddr_in6 {
 	uint16_t sa_family;
 	uint16_t sa_port;
+	uint32_t sa_scope; // scope moved here to make sa_addr 64-bit aligned
 	uint8_t  sa_addr[16];
-	uint32_t sa_scope;
 };
 
 struct nng_sockaddr_in {
@@ -442,7 +442,7 @@ NNG_DECL const char *nng_strerror(nng_err);
 // received the data.  The return value will be zero to indicate that the
 // socket has accepted the entire data for send, or an errno to indicate
 // failure.  The flags may include NNG_FLAG_NONBLOCK.
-NNG_DECL int nng_send(nng_socket, void *, size_t, int);
+NNG_DECL int nng_send(nng_socket, const void *, size_t, int);
 
 // nng_recv receives message data into the socket, up to the supplied size.
 // The actual size of the message data will be written to the value pointed
@@ -1292,7 +1292,7 @@ typedef struct {
 // only the first call can contain a non-NULL params.  If already
 // initialized with non-NULL params, will return NNG_EALREADY.
 // Applications should *not* call a matching nng_fini() in that case.
-NNG_DECL nng_err nng_init(nng_init_params *parms);
+NNG_DECL nng_err nng_init(const nng_init_params *parms);
 
 // nng_fini is used to terminate the library, freeing certain global resources.
 // Each call to nng_fini is paired to a call to nng_init.  The last such
