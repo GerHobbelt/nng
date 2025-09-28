@@ -20,7 +20,7 @@
 // protocol-independent fashion.  The socket makes individual calls,
 // which are expected to block if appropriate (except for destroy), or
 // run asynchronously if an aio is provided. Endpoints are unable to
-// call back into the socket, to prevent recusive entry and deadlock.
+// call back into the socket, to prevent recursive entry and deadlock.
 //
 // For a given endpoint, the framework holds a lock so that each entry
 // point is run exclusively of the others. (Transports must still guard
@@ -63,7 +63,7 @@ struct nni_sp_dialer_ops {
 	// This may be NULL if the dialer does not support TLS.
 	nng_err (*d_get_tls)(void *, nng_tls_config **);
 
-	// d_set_tls is used to set the TLS configruation to use for the
+	// d_set_tls is used to set the TLS configuration to use for the
 	// dialer. This may be NULL if this dialer does not support TLS.
 	nng_err (*d_set_tls)(void *, nng_tls_config *);
 
@@ -117,7 +117,7 @@ struct nni_sp_listener_ops {
 	// This may be NULL if the listener does not support TLS.
 	nng_err (*l_get_tls)(void *, nng_tls_config **);
 
-	// l_set_tls is used to set the TLS configruation to use for listening.
+	// l_set_tls is used to set the TLS configuration to use for listening.
 	// This may be NULL if this listener does not support TLS.
 	nng_err (*l_set_tls)(void *, nng_tls_config *);
 
@@ -139,7 +139,12 @@ struct nni_sp_pipe_ops {
 	// p_init initializes the pipe data structures.  The main
 	// purpose of this is so that the pipe will see the upper
 	// layer nni_pipe and get a chance to register stats and such.
-	size_t p_size;
+	// size_t p_size;
+
+	// p_size returns the size of the transport data needed for a pipe.
+	// This allows for dynamic registration of context size to allow for
+	// different tunings or different runtimes.
+	size_t (*p_size)(void);
 
 	// p_init initializes the transport's pipe data structure.
 	// The pipe MUST be left in a state that p_fini can be safely
