@@ -180,6 +180,13 @@ NNG_DECL void nng_http_set_method(nng_http *, const char *);
 // nng_http_get_method returns the method.
 NNG_DECL const char *nng_http_get_method(nng_http *);
 
+// nng_http_local_address obtains the local socket address for the connection.
+NNG_DECL nng_err nng_http_local_address(nng_http *, nng_sockaddr *);
+
+// nng_http_remote_address obtains the remote socket address for the
+// connection.
+NNG_DECL nng_err nng_http_remote_address(nng_http *, nng_sockaddr *);
+
 // These functions set (replacing any existing), or add (appending)
 // a header to either the request or response.  Clients modify the request
 // headers, and servers (and callbacks on the server) modify response headers.
@@ -197,6 +204,15 @@ NNG_DECL void nng_http_del_header(nng_http *, const char *);
 // It returns NULL if no matching header can be found.
 NNG_DECL const char *nng_http_get_header(nng_http *, const char *);
 
+// nng_http_next_header iterates over HTTP headers.  For clients,
+// it iterates over the response header, but for servers it iterates ovre the
+// request header. The key will receive the name of the header, and the value
+// the will receive its value. The caller starts the iteration by setting ptr
+// to NULL, and then the value must be preserved. The function returns NNG_OK
+// on success, or NNG_ENOENT if there are no more headers.
+NNG_DECL bool nng_http_next_header(
+    nng_http *, const char **key, const char **val, void **ptr);
+
 // nng_http_get_body returns the body sent by the peer, if one is attached.
 NNG_DECL void nng_http_get_body(nng_http *, void **, size_t *);
 
@@ -206,6 +222,10 @@ NNG_DECL void nng_http_set_body(nng_http *, void *, size_t);
 // nng_http_copy_body sets the body to send out in the next exchange, but
 // makes a local copy.  It can fail due to NNG_ENOMEM.
 NNG_DECL nng_err nng_http_copy_body(nng_http *, const void *, size_t);
+
+// nng_http_peer_cert returns the HTTP peer cert, if the one is available.
+// Only available for HTTPS connections.
+NNG_DECL nng_err nng_http_peer_cert(nng_http *, nng_tls_cert **);
 
 // nng_http_handler is a handler used on the server side to handle HTTP
 // requests coming into a specific URL.

@@ -12,8 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "core/nng_impl.h"
-#include "nng/nng.h"
+#include "../../../core/nng_impl.h"
 
 // TCP transport.   Platform specific TCP operations must be
 // supplied as well.

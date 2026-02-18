@@ -1,5 +1,5 @@
 //
-// Copyright 2024 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 // Copyright 2018 Devolutions <info@devolutions.net>
 // Copyright 2018 Cody Piersall <cody.piersall@gmail.com>
@@ -10,8 +10,7 @@
 // found online at https://opensource.org/licenses/MIT.
 //
 
-#include "nng/nng.h"
-#include <nuts.h>
+#include "../../../testing/nuts.h"
 
 // TCP tests.
 
@@ -231,6 +230,9 @@ check_props_v4(nng_msg *msg)
 
 	NUTS_PASS(nng_pipe_get_bool(p, NNG_OPT_TCP_NODELAY, &b));
 	NUTS_TRUE(b); // default
+
+	nng_tls_cert *cert;
+	NUTS_FAIL(nng_pipe_peer_cert(p, &cert), NNG_ENOTSUP);
 }
 
 void

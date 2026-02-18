@@ -8,7 +8,6 @@
 // found online at https://opensource.org/licenses/MIT.
 //
 
-#include "nng/nng.h"
 #include "core/nng_impl.h"
 #include "core/platform.h"
 #include "core/socket.h"
@@ -666,6 +665,30 @@ nng_dialer_start(nng_dialer did, int flags)
 	return (rv);
 }
 
+void
+nng_dialer_start_aio(nng_dialer did, int flags, nng_aio *aio)
+{
+	nni_dialer *d;
+	int         rv;
+
+	if (aio != NULL) {
+		nni_aio_reset(aio);
+	}
+	if ((flags & NNG_FLAG_NONBLOCK) == 0) {
+		nni_aio_finish_error(aio, NNG_EINVAL);
+		return;
+	}
+	if ((rv = nni_dialer_find(&d, did.id)) != 0) {
+		nni_aio_finish_error(aio, rv);
+		return;
+	}
+	if ((rv = nni_dialer_start_aio(d, flags, aio)) != 0) {
+		nni_aio_finish_error(aio, rv);
+		// fall-through
+	}
+	nni_dialer_rele(d);
+}
+
 int
 nng_dialer_id(nng_dialer d)
 {
@@ -756,7 +779,7 @@ nng_dialer_get_size(nng_dialer id, const char *n, size_t *v)
 }
 
 int
-nng_dialer_get_string(nng_dialer id, const char *n, char **v)
+nng_dialer_get_string(nng_dialer id, const char *n, const char **v)
 {
 	return (dialer_get(id, n, v, NULL, NNI_TYPE_STRING));
 }
@@ -885,7 +908,7 @@ nng_listener_get_size(nng_listener id, const char *n, size_t *v)
 }
 
 int
-nng_listener_get_string(nng_listener id, const char *n, char **v)
+nng_listener_get_string(nng_listener id, const char *n, const char **v)
 {
 	return (listener_get(id, n, v, NULL, NNI_TYPE_STRING));
 }
@@ -1334,9 +1357,69 @@ nng_pipe_get_size(nng_pipe id, const char *n, size_t *v)
 }
 
 nng_err
-nng_pipe_get_string(nng_pipe id, const char *n, char **v)
+nng_pipe_get_string(nng_pipe id, const char *n, const char **v)
 {
 	return (pipe_get(id, n, v, NULL, NNI_TYPE_STRING));
+}
+
+nng_err
+nng_pipe_get_strcpy(nng_pipe p, const char *n, char *buf, size_t len)
+{
+	nng_err     rv;
+	nni_pipe   *pipe;
+	const char *s;
+
+	if ((rv = nni_pipe_find(&pipe, p.id)) != 0) {
+		return (rv);
+	}
+	rv = nni_pipe_getopt(pipe, n, &s, NULL, NNI_TYPE_STRING);
+	if (rv == NNG_OK) {
+		if (nni_strlcpy(buf, s != NULL ? s : "", len) >= len) {
+			rv = NNG_ENOSPC;
+		}
+	}
+	nni_pipe_rele(pipe);
+	return (rv);
+}
+
+nng_err
+nng_pipe_get_strdup(nng_pipe p, const char *n, char **v)
+{
+	nng_err     rv;
+	nni_pipe   *pipe;
+	const char *s;
+
+	if ((rv = nni_pipe_find(&pipe, p.id)) != 0) {
+		return (rv);
+	}
+	rv = nni_pipe_getopt(pipe, n, &s, NULL, NNI_TYPE_STRING);
+	if (rv == NNG_OK) {
+		if (s == NULL) {
+			*v = NULL;
+		} else if ((*v = nni_strdup(s)) == NULL) {
+			rv = NNG_ENOMEM;
+		}
+	}
+	nni_pipe_rele(pipe);
+	return (rv);
+}
+
+nng_err
+nng_pipe_get_strlen(nng_pipe p, const char *n, size_t *len)
+{
+	nng_err     rv;
+	nni_pipe   *pipe;
+	const char *s;
+
+	if ((rv = nni_pipe_find(&pipe, p.id)) != 0) {
+		return (rv);
+	}
+	rv = nni_pipe_getopt(pipe, n, &s, NULL, NNI_TYPE_STRING);
+	if (rv == NNG_OK) {
+		*len = s == NULL ? 0 : strlen(s);
+	}
+	nni_pipe_rele(pipe);
+	return (rv);
 }
 
 nng_err
@@ -1349,6 +1432,20 @@ nng_err
 nng_pipe_get_addr(nng_pipe id, const char *n, nng_sockaddr *v)
 {
 	return (pipe_get(id, n, v, NULL, NNI_TYPE_SOCKADDR));
+}
+
+nng_err
+nng_pipe_peer_cert(nng_pipe p, nng_tls_cert **certp)
+{
+	nng_err   rv;
+	nni_pipe *pipe;
+
+	if ((rv = nni_pipe_find(&pipe, p.id)) != 0) {
+		return (rv);
+	}
+	rv = nni_pipe_peer_cert(pipe, certp);
+	nni_pipe_rele(pipe);
+	return (rv);
 }
 
 nng_socket
@@ -1963,7 +2060,7 @@ nng_aio_get_output(nng_aio *aio, unsigned index)
 }
 
 void
-nng_aio_finish(nng_aio *aio, int rv)
+nng_aio_finish(nng_aio *aio, nng_err rv)
 {
 	// Preserve the count.
 	nni_aio_finish(aio, rv, nni_aio_count(aio));
@@ -1972,6 +2069,7 @@ nng_aio_finish(nng_aio *aio, int rv)
 bool
 nng_aio_start(nng_aio *aio, nng_aio_cancelfn fn, void *arg)
 {
+	nni_aio_reset(aio);
 	return (nni_aio_start(aio, fn, arg));
 }
 

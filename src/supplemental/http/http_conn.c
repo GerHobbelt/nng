@@ -15,10 +15,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "core/list.h"
-#include "core/nng_impl.h"
+#include "../../core/list.h"
+#include "../../core/nng_impl.h"
+#include "../../supplemental/tls/tls_api.h"
 #include "nng/http.h"
-#include "supplemental/tls/tls_api.h"
 
 #include "http_api.h"
 #include "http_msg.h"
@@ -52,10 +52,10 @@ struct nng_http_conn {
 	nni_list    rdq; // high level http read requests
 	nni_list    wrq; // high level http write requests
 
-	nni_aio *rd_uaio; // user aio for read
-	nni_aio *wr_uaio; // user aio for write
-	nni_aio  rd_aio;  // bottom half read operations
-	nni_aio  wr_aio;  // bottom half write operations
+	nng_aio *rd_uaio; // user aio for read
+	nng_aio *wr_uaio; // user aio for write
+	nng_aio  rd_aio;  // bottom half read operations
+	nng_aio  wr_aio;  // bottom half write operations
 
 	nni_mtx mtx;
 
@@ -157,6 +157,16 @@ nni_http_conn_close(nni_http_conn *conn)
 	nni_mtx_lock(&conn->mtx);
 	http_close(conn);
 	nni_mtx_unlock(&conn->mtx);
+}
+
+nng_err
+nni_http_get_addr(nni_http_conn *conn, const char *opt, nng_sockaddr *addrp)
+{
+	nng_err rv;
+	nni_mtx_lock(&conn->mtx);
+	rv = nng_stream_get_addr(conn->sock, opt, addrp);
+	nni_mtx_unlock(&conn->mtx);
+	return (rv);
 }
 
 // http_buf_pull_up pulls the content of the read buffer back to the
@@ -1372,6 +1382,38 @@ http_get_header(const nni_list *hdrs, const char *key)
 	return (NULL);
 }
 
+static bool
+http_next_header(
+    const nni_list *hdrs, const char **key, const char **val, void **ptr)
+{
+	http_header *h;
+
+	if (*ptr == NULL) {
+		h = nni_list_first(hdrs);
+	} else {
+		h = nni_list_next(hdrs, *ptr);
+	}
+	if (h == NULL) {
+		return (false);
+	}
+
+	*ptr = h;
+	*key = h->name;
+	*val = h->value;
+	return (true);
+}
+
+bool
+nni_http_next_header(
+    nng_http *conn, const char **key, const char **val, void **ptr)
+{
+	if (conn->client) {
+		return (http_next_header(&conn->res.data.hdrs, key, val, ptr));
+	} else {
+		return (http_next_header(&conn->req.data.hdrs, key, val, ptr));
+	}
+}
+
 const char *
 nni_http_get_header(nng_http *conn, const char *key)
 {
@@ -1477,6 +1519,20 @@ nni_http_conn_getopt(
 		rv = NNG_ECLOSED;
 	} else {
 		rv = nni_stream_get(conn->sock, name, buf, szp, t);
+	}
+	nni_mtx_unlock(&conn->mtx);
+	return (rv);
+}
+
+nng_err
+nni_http_conn_peer_cert(nni_http_conn *conn, nng_tls_cert **certp)
+{
+	int rv;
+	nni_mtx_lock(&conn->mtx);
+	if (conn->closed) {
+		rv = NNG_ECLOSED;
+	} else {
+		rv = nng_stream_peer_cert(conn->sock, certp);
 	}
 	nni_mtx_unlock(&conn->mtx);
 	return (rv);

@@ -17,7 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "core/nng_impl.h"
+#include "../../core/nng_impl.h"
 
 #include "http_api.h"
 #include "http_msg.h"
@@ -1570,6 +1570,9 @@ nni_http_handler_init_static(nni_http_handler **hpp, const char *uri,
 
 	if ((hs = NNI_ALLOC_STRUCT(hs)) == NULL) {
 		return (NNG_ENOMEM);
+	}
+	if (ctype == NULL) {
+		ctype = "application/octet-stream";
 	}
 	if (((hs->ctype = nni_strdup(ctype)) == NULL) ||
 	    ((size > 0) && ((hs->data = nni_alloc(size)) == NULL))) {

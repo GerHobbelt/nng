@@ -19,7 +19,7 @@
 #include "stats.h"
 #include "thread.h"
 
-#include "sp/transport.h"
+#include "../sp/transport.h"
 
 // AIO
 extern void nni_pipe_recv(nni_pipe *, nni_aio *);
@@ -38,6 +38,9 @@ extern uint16_t nni_pipe_peer(nni_pipe *);
 // nni_pipe_getopt looks up the option.
 extern nng_err nni_pipe_getopt(
     nni_pipe *, const char *, void *, size_t *, nni_opt_type);
+
+// nni_pipe_peer_cert obtains the peer TLS certificate, if available.
+extern nng_err nni_pipe_peer_cert(nni_pipe *, nng_tls_cert **);
 
 // nni_pipe_find finds a pipe given its ID.  It places a hold on the
 // pipe, which must be released by the caller when it is done.

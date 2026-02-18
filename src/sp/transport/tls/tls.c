@@ -12,9 +12,7 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "core/nng_impl.h"
-
-#include "nng/nng.h"
+#include "../../../core/nng_impl.h"
 
 // TLS over TCP transport.   Platform specific TCP operations must be
 // supplied as well, and uses the supplemental TLS v1.2 code.  It is not
@@ -43,9 +41,9 @@ struct tlstran_pipe {
 	size_t        gotrxhead;
 	size_t        wanttxhead;
 	size_t        wantrxhead;
-	nni_aio       txaio;
-	nni_aio       rxaio;
-	nni_aio       negoaio;
+	nng_aio       txaio;
+	nng_aio       rxaio;
+	nng_aio       negoaio;
 	nni_msg      *rxmsg;
 	nni_mtx       mtx;
 };
@@ -63,9 +61,9 @@ struct tlstran_ep {
 	nng_stream_listener *listener;
 	nni_dialer          *ndialer;
 	nni_listener        *nlistener;
-	nni_aio             *useraio;
-	nni_aio              connaio;
-	nni_aio              timeaio;
+	nng_aio             *useraio;
+	nng_aio              connaio;
+	nng_aio              timeaio;
 	nni_list             waitpipes; // pipes waiting to match to socket
 	nni_list             negopipes; // pipes busy negotiating
 	const char          *host;
@@ -952,6 +950,14 @@ tlstran_pipe_getopt(
 	return (rv);
 }
 
+static nng_err
+tlstran_pipe_peer_cert(void *arg, nng_tls_cert **certp)
+{
+	tlstran_pipe *p = arg;
+
+	return (nng_stream_peer_cert(p->tls, certp));
+}
+
 static size_t
 tlstran_pipe_size(void)
 {
@@ -959,15 +965,16 @@ tlstran_pipe_size(void)
 }
 
 static nni_sp_pipe_ops tlstran_pipe_ops = {
-	.p_size   = tlstran_pipe_size,
-	.p_init   = tlstran_pipe_init,
-	.p_fini   = tlstran_pipe_fini,
-	.p_stop   = tlstran_pipe_stop,
-	.p_send   = tlstran_pipe_send,
-	.p_recv   = tlstran_pipe_recv,
-	.p_close  = tlstran_pipe_close,
-	.p_peer   = tlstran_pipe_peer,
-	.p_getopt = tlstran_pipe_getopt,
+	.p_size      = tlstran_pipe_size,
+	.p_init      = tlstran_pipe_init,
+	.p_fini      = tlstran_pipe_fini,
+	.p_stop      = tlstran_pipe_stop,
+	.p_send      = tlstran_pipe_send,
+	.p_recv      = tlstran_pipe_recv,
+	.p_close     = tlstran_pipe_close,
+	.p_peer      = tlstran_pipe_peer,
+	.p_getopt    = tlstran_pipe_getopt,
+	.p_peer_cert = tlstran_pipe_peer_cert,
 };
 
 static nni_option tlstran_ep_options[] = {

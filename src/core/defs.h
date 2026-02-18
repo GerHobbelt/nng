@@ -12,9 +12,10 @@
 #define CORE_DEFS_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
-#include <nng/nng.h>
+#include "../include/nng/nng.h"
 
 // C compilers may get unhappy when named arguments are not used.  While
 // there are things like __attribute__((unused)) which are arguably
@@ -22,6 +23,8 @@
 #define NNI_ARG_UNUSED(x) ((void) x)
 
 #ifndef NDEBUG
+extern void nni_panic(const char *fmt, ...);
+
 #define NNI_ASSERT(x) \
 	if (!(x))     \
 	nni_panic("%s: %d: assert err: %s", __FILE__, __LINE__, #x)
@@ -125,30 +128,30 @@ typedef void (*nni_cb)(void *);
 
 // Modern CPUs are all little endian.  Let's stop paying the endian tax.
 
-#define NNI_PUT16LE(ptr, u)                                    \
-	do {                                                   \
-		((uint8_t *)ptr)[1] = (uint8_t) (((uint16_t) (u)) >> 8u); \
-		((uint8_t *)ptr)[0] = (uint8_t) ((uint16_t) (u));         \
+#define NNI_PUT16LE(ptr, u)                                                \
+	do {                                                               \
+		((uint8_t *) ptr)[1] = (uint8_t) (((uint16_t) (u)) >> 8u); \
+		((uint8_t *) ptr)[0] = (uint8_t) ((uint16_t) (u));         \
 	} while (0)
 
-#define NNI_PUT32LE(ptr, u)                                     \
-	do {                                                    \
-		((uint8_t *)ptr)[3] = (uint8_t) (((uint32_t) (u)) >> 24u); \
-		((uint8_t *)ptr)[2] = (uint8_t) (((uint32_t) (u)) >> 16u); \
-		((uint8_t *)ptr)[1] = (uint8_t) (((uint32_t) (u)) >> 8u);  \
-		((uint8_t *)ptr)[0] = (uint8_t) ((uint32_t) (u));          \
+#define NNI_PUT32LE(ptr, u)                                                 \
+	do {                                                                \
+		((uint8_t *) ptr)[3] = (uint8_t) (((uint32_t) (u)) >> 24u); \
+		((uint8_t *) ptr)[2] = (uint8_t) (((uint32_t) (u)) >> 16u); \
+		((uint8_t *) ptr)[1] = (uint8_t) (((uint32_t) (u)) >> 8u);  \
+		((uint8_t *) ptr)[0] = (uint8_t) ((uint32_t) (u));          \
 	} while (0)
 
-#define NNI_PUT64LE(ptr, u)                                     \
-	do {                                                    \
-		((uint8_t *)ptr)[7] = (uint8_t) (((uint64_t) (u)) >> 56u); \
-		((uint8_t *)ptr)[6] = (uint8_t) (((uint64_t) (u)) >> 48u); \
-		((uint8_t *)ptr)[5] = (uint8_t) (((uint64_t) (u)) >> 40u); \
-		((uint8_t *)ptr)[4] = (uint8_t) (((uint64_t) (u)) >> 32u); \
-		((uint8_t *)ptr)[3] = (uint8_t) (((uint64_t) (u)) >> 24u); \
-		((uint8_t *)ptr)[2] = (uint8_t) (((uint64_t) (u)) >> 16u); \
-		((uint8_t *)ptr)[1] = (uint8_t) (((uint64_t) (u)) >> 8u);  \
-		((uint8_t *)ptr)[0] = (uint8_t) ((uint64_t) (u));          \
+#define NNI_PUT64LE(ptr, u)                                                 \
+	do {                                                                \
+		((uint8_t *) ptr)[7] = (uint8_t) (((uint64_t) (u)) >> 56u); \
+		((uint8_t *) ptr)[6] = (uint8_t) (((uint64_t) (u)) >> 48u); \
+		((uint8_t *) ptr)[5] = (uint8_t) (((uint64_t) (u)) >> 40u); \
+		((uint8_t *) ptr)[4] = (uint8_t) (((uint64_t) (u)) >> 32u); \
+		((uint8_t *) ptr)[3] = (uint8_t) (((uint64_t) (u)) >> 24u); \
+		((uint8_t *) ptr)[2] = (uint8_t) (((uint64_t) (u)) >> 16u); \
+		((uint8_t *) ptr)[1] = (uint8_t) (((uint64_t) (u)) >> 8u);  \
+		((uint8_t *) ptr)[0] = (uint8_t) ((uint64_t) (u));          \
 	} while (0)
 
 #define NNI_GET16LE(ptr, v)                                 \
