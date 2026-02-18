@@ -1,5 +1,5 @@
 //
-// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2026 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 //
 // This software is supplied under the terms of the MIT License, a
@@ -37,7 +37,7 @@
 #endif
 
 #ifndef NNG_HAVE_INET6
-#ifdef HAVE_NNG_HAVE_INET6_BSD
+#ifdef NNG_HAVE_INET6_BSD
 #define NNG_HAVE_INET6
 #include <netinet6/in6.h>
 #else
@@ -69,6 +69,7 @@ resolv_cancel(nni_aio *aio, void *arg, nng_err rv)
 		// We have not been picked up by a resolver thread yet,
 		// so we can just discard everything.
 		nni_aio_list_remove(aio);
+		nni_aio_finish_error(aio, rv);
 	} else {
 		// Remove it from the thread pending list.  We cannot abort
 		// the actual lookup, but this abandons interest in it, and
@@ -76,12 +77,12 @@ resolv_cancel(nni_aio *aio, void *arg, nng_err rv)
 		for (int i = 0; i < resolv_num_thr; i++) {
 			if (resolv_active[i] == aio) {
 				resolv_active[i] = NULL;
+				nni_aio_finish_error(aio, rv);
 				break;
 			}
 		}
 	}
 	nni_mtx_unlock(&resolv_mtx);
-	nni_aio_finish_error(aio, rv);
 }
 
 static int

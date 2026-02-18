@@ -75,7 +75,6 @@ test_dtls_port_zero_bind(void)
 	nng_socket      s1;
 	nng_socket      s2;
 	nng_tls_config *c1, *c2;
-	nng_sockaddr    sa;
 	nng_listener    l;
 	nng_dialer      d;
 	const nng_url  *url;
@@ -90,10 +89,6 @@ test_dtls_port_zero_bind(void)
 	NUTS_PASS(nng_listener_start(l, 0));
 	NUTS_PASS(nng_listener_get_url(l, &url));
 	NUTS_MATCH(nng_url_scheme(url), "dtls");
-	NUTS_PASS(nng_listener_get_addr(l, NNG_OPT_LOCADDR, &sa));
-	NUTS_TRUE(sa.s_in.sa_family == NNG_AF_INET);
-	NUTS_TRUE(sa.s_in.sa_port != 0);
-	NUTS_TRUE(sa.s_in.sa_addr = nuts_be32(0x7f000001));
 	NUTS_PASS(nng_dialer_create_url(&d, s2, url));
 	NUTS_PASS(nng_dialer_set_tls(d, c2));
 	// NUTS_PASS(nng_dialer_start(d, NNG_FLAG_NONBLOCK));
@@ -111,7 +106,6 @@ test_dtls_bad_cert_mutual(void)
 	nng_socket      s1;
 	nng_socket      s2;
 	nng_tls_config *c1, *c2;
-	nng_sockaddr    sa;
 	nng_listener    l;
 	nng_dialer      d;
 	const nng_url  *url;
@@ -130,10 +124,6 @@ test_dtls_bad_cert_mutual(void)
 	NUTS_PASS(nng_listener_start(l, 0));
 	NUTS_PASS(nng_listener_get_url(l, &url));
 	NUTS_MATCH(nng_url_scheme(url), "dtls");
-	NUTS_PASS(nng_listener_get_addr(l, NNG_OPT_LOCADDR, &sa));
-	NUTS_TRUE(sa.s_in.sa_family == NNG_AF_INET);
-	NUTS_TRUE(sa.s_in.sa_port != 0);
-	NUTS_TRUE(sa.s_in.sa_addr = nuts_be32(0x7f000001));
 	NUTS_PASS(nng_dialer_create_url(&d, s2, url));
 	NUTS_PASS(nng_dialer_set_tls(d, c2));
 	// With DTLS we are not guaranteed to get the connection failure.
@@ -151,7 +141,6 @@ test_dtls_cert_mutual(void)
 	nng_socket      s1;
 	nng_socket      s2;
 	nng_tls_config *c1, *c2;
-	nng_sockaddr    sa;
 	nng_listener    l;
 	nng_dialer      d;
 	const nng_url  *url;
@@ -170,10 +159,6 @@ test_dtls_cert_mutual(void)
 	NUTS_PASS(nng_listener_start(l, 0));
 	NUTS_PASS(nng_listener_get_url(l, &url));
 	NUTS_MATCH(nng_url_scheme(url), "dtls");
-	NUTS_PASS(nng_listener_get_addr(l, NNG_OPT_LOCADDR, &sa));
-	NUTS_TRUE(sa.s_in.sa_family == NNG_AF_INET);
-	NUTS_TRUE(sa.s_in.sa_port != 0);
-	NUTS_TRUE(sa.s_in.sa_addr = nuts_be32(0x7f000001));
 	NUTS_PASS(nng_dialer_create_url(&d, s2, url));
 	NUTS_PASS(nng_dialer_set_tls(d, c2));
 	NUTS_PASS(nng_dialer_start(d, 0));
@@ -395,8 +380,8 @@ test_dtls_exchange_many(void)
 void
 test_dtls_reqrep_multi(void)
 {
-	char            msg[256];
-	char            buf[256];
+	char            msg[1024];
+	char            buf[1024];
 	nng_socket      s0;
 	nng_socket      s1;
 	nng_socket      s2;
@@ -464,6 +449,72 @@ test_dtls_reqrep_multi(void)
 	nng_tls_config_free(c1);
 }
 
+#define NCLIENT 10
+void
+test_dtls_pub_multi(void)
+{
+	char            msg[1024];
+	char            buf[1024];
+	nng_socket      s0;
+	nng_tls_config *c0, *c1;
+	nng_listener    l;
+	size_t          sz;
+	char           *addr;
+	const nng_url  *url;
+	nng_socket      cs[NCLIENT];
+	nng_dialer      cd[NCLIENT];
+
+	NUTS_ENABLE_LOG(NNG_LOG_DEBUG);
+
+	NUTS_ADDR_ZERO(addr, "dtls");
+
+	c0 = tls_server_config();
+	c1 = tls_client_config();
+	NUTS_PASS(nng_pub0_open(&s0));
+	NUTS_PASS(nng_socket_set_ms(s0, NNG_OPT_RECVTIMEO, 100));
+	NUTS_PASS(nng_socket_set_size(s0, NNG_OPT_RECVMAXSZ, 200));
+	NUTS_PASS(nng_socket_set_ms(s0, NNG_OPT_SENDTIMEO, 100));
+	NUTS_PASS(nng_listener_create(&l, s0, addr));
+	NUTS_PASS(nng_listener_set_tls(l, c0));
+	NUTS_PASS(nng_socket_get_size(s0, NNG_OPT_RECVMAXSZ, &sz));
+	NUTS_TRUE(sz == 200);
+	NUTS_PASS(nng_listener_set_size(l, NNG_OPT_RECVMAXSZ, 100));
+	NUTS_PASS(nng_listener_start(l, 0));
+	NUTS_PASS(nng_listener_get_url(l, &url));
+
+	for (int i = 0; i < NCLIENT; i++) {
+		NUTS_PASS(nng_sub0_open(&cs[i]));
+		NUTS_PASS(nng_socket_set_ms(cs[i], NNG_OPT_RECVTIMEO, 100));
+		NUTS_PASS(nng_sub0_socket_subscribe(cs[i], "", 0));
+		NUTS_PASS(nng_dialer_create_url(&cd[i], cs[i], url));
+		NUTS_PASS(nng_dialer_set_tls(cd[i], c1));
+		NUTS_PASS(nng_dialer_start(cd[i], 0));
+	}
+
+	// send a bunch of messages - we're hoping that by serializing we won't
+	// overwhelm the network.
+	for (int i = 0; i < 1000; i++) {
+		size_t len = nng_random() % (sizeof(msg) - 1);
+		memset(msg, 'a' + i % 26, sizeof(buf));
+		msg[len] = 0;
+		NUTS_PASS(nng_send(s0, msg, len + 1, 0));
+		for (int j = 0; j < NCLIENT; j++) {
+			sz = sizeof(msg);
+			memset(buf, 0, sizeof(buf));
+			NUTS_PASS(nng_recv(cs[j], buf, &sz, 0));
+			NUTS_TRUE(sz == len + 1);
+			NUTS_MATCH(msg, buf);
+			memset(buf, 0, sizeof(buf));
+		}
+	}
+	NUTS_CLOSE(s0);
+	for (int i = 0; i < NCLIENT; i++) {
+		NUTS_CLOSE(cs[i]);
+	}
+	nng_tls_config_free(c0);
+	nng_tls_config_free(c1);
+}
+
 void
 test_dtls_psk(void)
 {
@@ -519,7 +570,6 @@ test_dtls_pipe_details(void)
 	nng_socket      s1;
 	nng_socket      s2;
 	nng_tls_config *c1, *c2;
-	nng_sockaddr    sa;
 	nng_listener    l;
 	nng_dialer      d;
 	nng_msg        *msg;
@@ -540,10 +590,6 @@ test_dtls_pipe_details(void)
 	NUTS_PASS(nng_listener_start(l, 0));
 	NUTS_PASS(nng_listener_get_url(l, &url));
 	NUTS_MATCH(nng_url_scheme(url), "dtls");
-	NUTS_PASS(nng_listener_get_addr(l, NNG_OPT_LOCADDR, &sa));
-	NUTS_TRUE(sa.s_in.sa_family == NNG_AF_INET);
-	NUTS_TRUE(sa.s_in.sa_port != 0);
-	NUTS_TRUE(sa.s_in.sa_addr = nuts_be32(0x7f000001));
 	NUTS_PASS(nng_dialer_create_url(&d, s2, url));
 	NUTS_PASS(nng_dialer_set_tls(d, c2));
 	NUTS_PASS(nng_dialer_start(d, 0));
@@ -602,6 +648,7 @@ NUTS_TESTS = {
 	{ "dtls recv large", test_dtls_recv_large },
 	{ "dtls exchange many", test_dtls_exchange_many },
 	{ "dtls reqrep multi", test_dtls_reqrep_multi },
+	{ "dtls pub multi", test_dtls_pub_multi },
 	{ "dtls pre-shared key", test_dtls_psk },
 	{ "dtls bad cert mutual", test_dtls_bad_cert_mutual },
 	{ "dtls cert mutual", test_dtls_cert_mutual },

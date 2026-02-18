@@ -24,7 +24,7 @@ test_ws_url_path_filters(void)
 
 	snprintf(addr, sizeof(addr), "ws://127.0.0.1:0/ws-url-path-filters");
 	NUTS_PASS(nng_listen(s1, addr, &l, 0));
-	NUTS_PASS(nng_listener_get_int(l, NNG_OPT_TCP_BOUND_PORT, &port));
+	NUTS_PASS(nng_listener_get_int(l, NNG_OPT_BOUND_PORT, &port));
 
 	snprintf(
 	    addr, sizeof(addr), "ws://127.0.0.1:%d/some-other-location", port);
@@ -58,16 +58,16 @@ test_wild_card_port(void)
 	NUTS_OPEN(s5);
 	NUTS_OPEN(s6);
 	NUTS_PASS(nng_listen(s1, "ws://127.0.0.1:0/one", &l1, 0));
-	NUTS_PASS(nng_listener_get_int(l1, NNG_OPT_TCP_BOUND_PORT, &port1));
+	NUTS_PASS(nng_listener_get_int(l1, NNG_OPT_BOUND_PORT, &port1));
 	NUTS_TRUE(port1 != 0);
 	snprintf(ws_url, sizeof(ws_url), "ws4://127.0.0.1:%d/two", port1);
 	NUTS_PASS(nng_listen(s2, ws_url, &l2, 0));
-	NUTS_PASS(nng_listener_get_int(l2, NNG_OPT_TCP_BOUND_PORT, &port2));
+	NUTS_PASS(nng_listener_get_int(l2, NNG_OPT_BOUND_PORT, &port2));
 	NUTS_TRUE(port1 != 0);
 	NUTS_TRUE(port1 == port2);
 	// Now try a different wild card port.
 	NUTS_PASS(nng_listen(s3, "ws4://127.0.0.1:0/three", &l3, 0));
-	NUTS_PASS(nng_listener_get_int(l3, NNG_OPT_TCP_BOUND_PORT, &port3));
+	NUTS_PASS(nng_listener_get_int(l3, NNG_OPT_BOUND_PORT, &port3));
 	NUTS_TRUE(port3 != 0);
 	NUTS_TRUE(port3 != port1);
 
@@ -127,7 +127,7 @@ test_empty_host(void)
 	// we use ws4 to ensure 127.0.0.1 binding
 	snprintf(addr, sizeof(addr), "ws4://:0/test");
 	NUTS_PASS(nng_listen(s1, addr, &l, 0));
-	NUTS_PASS(nng_listener_get_int(l, NNG_OPT_TCP_BOUND_PORT, &port));
+	NUTS_PASS(nng_listener_get_int(l, NNG_OPT_BOUND_PORT, &port));
 	nng_msleep(100);
 
 	snprintf(addr, sizeof(addr), "ws://127.0.0.1:%u/test", port);
@@ -165,7 +165,7 @@ test_ws_recv_max(void)
 	NUTS_PASS(nng_listener_get_size(l, NNG_OPT_RECVMAXSZ, &sz));
 	NUTS_TRUE(sz == 100);
 	NUTS_PASS(nng_listener_start(l, 0));
-	NUTS_PASS(nng_listener_get_int(l, NNG_OPT_TCP_BOUND_PORT, &port));
+	NUTS_PASS(nng_listener_get_int(l, NNG_OPT_BOUND_PORT, &port));
 
 	NUTS_OPEN(s1);
 	snprintf(url, sizeof(url), addr, port);
@@ -205,25 +205,22 @@ static void
 check_props_v4(nng_msg *msg)
 {
 	nng_pipe     p;
-	size_t       z;
 	nng_sockaddr la;
 	nng_sockaddr ra;
 	bool         b;
 
 	p = nng_msg_get_pipe(msg);
 	NUTS_TRUE(nng_pipe_id(p) > 0);
-	NUTS_PASS(nng_pipe_get_addr(p, NNG_OPT_LOCADDR, &la));
-	NUTS_FAIL(nng_pipe_get_size(p, NNG_OPT_LOCADDR, &z), NNG_EBADTYPE);
+	NUTS_PASS(nng_pipe_self_addr(p, &la));
 	NUTS_TRUE(la.s_family == NNG_AF_INET);
 	NUTS_TRUE(la.s_in.sa_port != 0);
 	NUTS_TRUE(la.s_in.sa_addr == nuts_be32(0x7f000001));
 
-	NUTS_PASS(nng_pipe_get_addr(p, NNG_OPT_REMADDR, &ra));
+	NUTS_PASS(nng_pipe_peer_addr(p, &ra));
 	NUTS_TRUE(ra.s_family == NNG_AF_INET);
 	NUTS_TRUE(ra.s_in.sa_port != 0);
 	NUTS_TRUE(ra.s_in.sa_addr == nuts_be32(0x7f000001));
 	NUTS_TRUE(ra.s_in.sa_port != la.s_in.sa_port);
-	NUTS_FAIL(nng_pipe_get_size(p, NNG_OPT_REMADDR, &z), NNG_EBADTYPE);
 
 	NUTS_PASS(nng_pipe_get_bool(p, NNG_OPT_TCP_KEEPALIVE, &b));
 	NUTS_TRUE(b == false); // default

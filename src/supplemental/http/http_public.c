@@ -192,6 +192,8 @@ nng_http_set_version(nng_http *conn, const char *version)
 #ifdef NNG_SUPP_HTTP
 	return (nni_http_set_version(conn, version));
 #else
+	NNI_ARG_UNUSED(conn);
+	NNI_ARG_UNUSED(version);
 	return (NNG_ENOTSUP);
 #endif
 }
@@ -309,13 +311,15 @@ nng_http_read_response(nng_http *conn, nng_aio *aio)
 nng_err
 nng_http_remote_address(nng_http *conn, nng_sockaddr *addrp)
 {
-	return (nni_http_get_addr(conn, NNG_OPT_REMADDR, addrp));
+	*addrp = *(nni_http_peer_addr(conn));
+	return (NNG_OK);
 }
 
 nng_err
 nng_http_local_address(nng_http *conn, nng_sockaddr *addrp)
 {
-	return (nni_http_get_addr(conn, NNG_OPT_LOCADDR, addrp));
+	*addrp = *(nni_http_self_addr(conn));
+	return (NNG_OK);
 }
 
 nng_err
@@ -563,17 +567,15 @@ nng_http_server_get_tls(nng_http_server *srv, nng_tls_config **cfg)
 }
 
 nng_err
-nng_http_server_get_addr(nng_http_server *srv, nng_sockaddr *addr)
+nng_http_server_get_port(nng_http_server *srv, int *port)
 {
 #ifdef NNG_SUPP_HTTP
-	size_t size = sizeof(nng_sockaddr);
-	if (srv == NULL || addr == NULL)
-		return NNG_EINVAL;
+	size_t size = sizeof(*port);
 	return (nni_http_server_get(
-	    srv, NNG_OPT_LOCADDR, addr, &size, NNI_TYPE_SOCKADDR));
+	    srv, NNG_OPT_BOUND_PORT, port, &size, NNI_TYPE_INT32));
 #else
 	NNI_ARG_UNUSED(srv);
-	NNI_ARG_UNUSED(addr);
+	NNI_ARG_UNUSED(port);
 	return (NNG_ENOTSUP);
 #endif
 }

@@ -22,6 +22,7 @@
 
 #include "http_api.h"
 #include "http_msg.h"
+#include "nng/nng.h"
 
 // We insist that individual headers fit in 8K.
 // If you need more than that, you need something we can't do.
@@ -159,14 +160,16 @@ nni_http_conn_close(nni_http_conn *conn)
 	nni_mtx_unlock(&conn->mtx);
 }
 
-nng_err
-nni_http_get_addr(nni_http_conn *conn, const char *opt, nng_sockaddr *addrp)
+const nng_sockaddr *
+nni_http_peer_addr(nni_http_conn *conn)
 {
-	nng_err rv;
-	nni_mtx_lock(&conn->mtx);
-	rv = nng_stream_get_addr(conn->sock, opt, addrp);
-	nni_mtx_unlock(&conn->mtx);
-	return (rv);
+	return (nng_stream_peer_addr(conn->sock));
+}
+
+const nng_sockaddr *
+nni_http_self_addr(nni_http_conn *conn)
+{
+	return (nng_stream_self_addr(conn->sock));
 }
 
 // http_buf_pull_up pulls the content of the read buffer back to the

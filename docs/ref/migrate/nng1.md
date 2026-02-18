@@ -173,6 +173,14 @@ address separated by a semicolon. This was provided for legacy libnanomsg
 compatibility, and is no longer offered. The correct way to specify a
 local address is by setting `NNG_OPT_LOCADDR` on the dialer.
 
+## Support for Address Options Removed
+
+The `NNG_OPT_REMADDR` and `NNG_OPT_LOCADDR` options are removed. For streams and pipes, there are
+[`nng_stream_peer_addr`] and [`nng_pipe_peer_addr`] functions. For dialers
+and stream dialers, the application should track the relevant information
+used to configure the listener. Functions formerly used to configure these are
+removed as well.
+
 ## IPC Option Type Changes
 
 The types of [`NNG_OPT_PEER_GID`], [`NNG_OPT_PEER_PID`], [`NNG_OPT_PEER_UID`], and [`NNG_OPT_PEER_ZONEID`]
@@ -221,6 +229,7 @@ and are thus removed:
 - `nng_stream_listener_set_ptr`
 - `nng_stream_listener_get_uint64`
 - `nng_stream_listener_set_uint64`
+- `nng_stream_listener_get_addr`
 - `nng_ctx_get_ptr` (not documented)
 - `nng_ctx_set_ptr` (not documented)
 
@@ -246,6 +255,9 @@ such as one ending in a suffix like `_bool` (to access a `bool` typed option).
 - `nng_stream_listener_set`
 
 ## Stream Options
+
+The `nng_stream_get_addr` function is removed.
+Use the new [`nng_stream_peer_addr`] or [`nng_stream_peer_self_addr`] instead.
 
 The ability to set options on streams after they have been created is no longer present.
 (It turns out that this was not very useful.) All functions `nng_stream_set_xxx` are removed.
@@ -273,6 +285,13 @@ directly:
 The latter option is a hint for transports and intended to facilitate early
 detection (and possibly avoidance of extra allocations) of oversize messages,
 before bringing them into the socket itself.
+
+The `NNG_OPT_TCP_BOUND_PORT` port is renamed to just [`NNG_OPT_BOUND_PORT`],
+and is available for listeners using transports based on either TCP or UDP.
+
+The `nng_pipe_get_addr` function has been removed, and replaced with the new
+[`nng_pipe_peer_addr`] and [`nng_pipe_self_addr`] functions. These should be
+easier to use.
 
 ## Socket Options
 
@@ -362,6 +381,10 @@ They may silently truncate data.
 The HTTP handler objects may not be modified once in use. Previously this would fail with `NNG_EBUSY`.
 These checks are removed now, but debug builds will assert if an application tries to do so.
 
+The `nng_http_server_get_addr` function is removed. Instead there is now
+[`nng_http_server_get_port`] which can be used to obtain the port actually bound if the server
+was configured with port 0.
+
 ## WebSocket API
 
 The `NNG_OPT_WSS_REQUEST_HEADERS`, `NNG_OPT_WSS_RESPONSE_HEADERS` and
@@ -397,5 +420,19 @@ See [`nng_args_parse`] for more information.
 The Layer 2 special ZeroTier transport has been removed.
 It is possible to use NNG with ZeroTier using TCP/IP, and a future update
 is planned to provided coexistence between ZeroTier & the native stack's TCP/IP using lwIP.
+
+## Abstract Autobinding No Longer Supported
+
+As we have removed `NNG_OPT_LOCADDR`, it is no longer possible to meaningfully
+use autobinding with abstract sockets on Linux. This is trivially worked around by using a
+large (say 128-bit) random integer as the name.
+
+This can be done via using of [`nng_random`] combined with `sprintf`, as the following example demonstrates:
+
+```c
+char url[256];
+snprintf(url, sizeof (url), `abstract://my-app-%08x-%08x-%08x-%08x",
+    nni_random(), nni_random(), nni_random(), nni_random());
+```
 
 {{#include ../xref.md}}

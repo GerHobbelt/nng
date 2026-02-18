@@ -1,5 +1,5 @@
 //
-// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2026 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitoar.com>
 //
 // This software is supplied under the terms of the MIT License, a
@@ -22,8 +22,12 @@
 // superior, support for such are not universal.
 #define NNI_ARG_UNUSED(x) ((void) x)
 
-#ifndef NDEBUG
+// nni_panic is called to abort the program on an internal fault.
+// It should only be called when there is a bug (either in NNG itself,
+// or if the user's program gave invalid inputs.)
 extern void nni_panic(const char *fmt, ...);
+
+#ifndef NDEBUG
 
 #define NNI_ASSERT(x) \
 	if (!(x))     \
@@ -260,5 +264,12 @@ extern void *nni_zalloc(size_t);
 // This routine does nothing if supplied with a NULL pointer and zero size.
 // Most implementations can just call free() here.
 extern void nni_free(void *, size_t);
+
+// nni_inet_ntop is like inet_ntop, but for NNG_AF_INET and NNG_AF_INET6. The
+// output buffer must be able to contain at least 46 bytes.  Note that
+// NNG_AF_UNSPEC is explicitly unsupported, as we do not pass the address
+// length.
+extern char *nni_inet_ntop(
+    enum nng_sockaddr_family af, const uint8_t *addr, char *buf);
 
 #endif // CORE_DEFS_H
