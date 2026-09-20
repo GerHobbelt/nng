@@ -1,5 +1,8 @@
 name: coverage
 on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "**.adoc", "**.md"]
   pull_request:
     types: [opened, synchronize, reopened]
     paths-ignore: ["docs/**", "**.adoc", "**.md"]
@@ -14,6 +17,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install mbedTLS
         run: sudo apt-get install libmbedtls-dev
@@ -42,6 +47,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install mbedTLS
         run: brew install mbedtls
@@ -79,6 +86,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up UCRT64
         uses: msys2/setup-msys2@v2
@@ -102,13 +111,14 @@ jobs:
         run: cmake --build build
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: >-
+          ctest --test-dir build --output-on-failure
+          && cmake -DNNG_BUILD_DIR="$PWD/build" -P cmake/NNGPrepareGcovPrefix.cmake
 
       - name: Collect coverage
         run: >-
           gcovr --root . --object-directory build
           --filter 'src/' --filter 'include/'
-          --gcov-ignore-parse-errors negative_hits.warn_once_per_file
           --lcov --output lcov.info
 
       - name: Upload report

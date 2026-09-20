@@ -366,6 +366,33 @@ test_server_basic(void)
 }
 
 static void
+test_server_empty_uri_query(void)
+{
+	void              *data;
+	size_t             size;
+	uint16_t           stat;
+	char              *ctype;
+	struct server_test st;
+	nng_http_handler  *h;
+
+	NUTS_PASS(nng_http_handler_alloc_static(
+	    &h, "/", doc1, strlen(doc1), "text/html"));
+	server_setup(&st, h);
+
+	// An empty path with a query is serialized as the valid target "/?query".
+	NUTS_PASS(nng_http_set_uri(st.conn, "", "param=1234"));
+	NUTS_PASS(httpget(&st, &data, &size, &stat, &ctype));
+	NUTS_TRUE(stat == NNG_HTTP_STATUS_OK);
+	NUTS_TRUE(size == strlen(doc1));
+	NUTS_TRUE(memcmp(data, doc1, size) == 0);
+	NUTS_MATCH(ctype, "text/html");
+	nng_strfree(ctype);
+	nng_free(data, size);
+
+	server_free(&st);
+}
+
+static void
 test_server_unix(void)
 {
 #if !defined(NNG_PLATFORM_POSIX) && !defined(NNG_HAVE_UNIX_SOCKETS)
@@ -727,6 +754,20 @@ test_server_bad_request_target(void)
 
 	server_reset(&st);
 
+	NUTS_PASS(nng_http_set_uri(st.conn, "?/../../secret", NULL));
+	nng_http_write_request(st.conn, st.aio);
+
+	nng_aio_wait(st.aio);
+	NUTS_PASS(nng_aio_result(st.aio));
+
+	nng_http_read_response(st.conn, st.aio);
+	nng_aio_wait(st.aio);
+	NUTS_PASS(nng_aio_result(st.aio));
+
+	NUTS_HTTP_STATUS(st.conn, NNG_HTTP_STATUS_BAD_REQUEST);
+
+	server_reset(&st);
+
 	NUTS_PASS(nng_http_set_uri(st.conn, "/home\\..\\secret", NULL));
 	nng_http_write_request(st.conn, st.aio);
 
@@ -889,6 +930,106 @@ test_server_header_too_long(void)
 
 	NUTS_HTTP_STATUS(st.conn, NNG_HTTP_STATUS_HEADERS_TOO_LARGE);
 
+	server_free(&st);
+}
+
+static void
+http_echo_headers(nng_http *conn, void *arg, nng_aio *aio)
+{
+	const char *names[] = { "X-First", "X-Second", "X-Third", "X-Last" };
+	nng_err     rv      = NNG_OK;
+
+	NNI_ARG_UNUSED(arg);
+	for (size_t i = 0; i < NNI_NUM_ELEMENTS(names); i++) {
+		const char *value = nng_http_get_header(conn, names[i]);
+		if (value == NULL) {
+			rv = NNG_EPROTO;
+			break;
+		}
+		if ((rv = nng_http_set_header(conn, names[i], value)) !=
+		    NNG_OK) {
+			break;
+		}
+	}
+	if (rv == NNG_OK) {
+		rv = nng_http_copy_body(conn, doc2, strlen(doc2));
+	}
+	nng_aio_finish(aio, rv);
+}
+
+static void
+test_server_many_headers(void)
+{
+	struct server_test st;
+	nng_http_handler  *h;
+	const char *names[] = { "X-First", "X-Second", "X-Third", "X-Last" };
+	size_t      sizes[] = { 2000, 2030, 2100, 4096, 2000 };
+	char        value[4097];
+
+	NUTS_PASS(nng_http_handler_alloc(&h, "/", http_echo_headers));
+	server_setup(&st, h);
+
+	// Exercise both sides of the serialization buffer limit, including
+	// multiple headers after the first truncated header.  Each individual
+	// header remains small enough for the receiver's line buffer.
+	for (size_t i = 0; i < NNI_NUM_ELEMENTS(sizes); i++) {
+		void  *body;
+		size_t len;
+
+		nng_http_reset(st.conn);
+		NUTS_PASS(nng_http_set_uri(st.conn, "/", NULL));
+		memset(value, 'a' + (int) i, sizes[i]);
+		value[sizes[i]] = '\0';
+		for (size_t j = 0; j < NNI_NUM_ELEMENTS(names); j++) {
+			NUTS_PASS(
+			    nng_http_set_header(st.conn, names[j], value));
+		}
+		NUTS_PASS(httpdo(&st, &body, &len));
+		NUTS_HTTP_STATUS(st.conn, NNG_HTTP_STATUS_OK);
+		for (size_t j = 0; j < NNI_NUM_ELEMENTS(names); j++) {
+			NUTS_MATCH(
+			    nng_http_get_header(st.conn, names[j]), value);
+		}
+		NUTS_TRUE(len == strlen(doc2));
+		NUTS_TRUE(memcmp(body, doc2, len) == 0);
+		nng_free(body, len);
+	}
+	server_free(&st);
+}
+
+static void
+test_server_pipelined_requests(void)
+{
+	struct server_test st;
+	nng_http_handler  *h;
+	char    requests[] = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
+	                     "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
+	nng_iov iov        = { requests, sizeof(requests) - 1 };
+	char    body[64];
+
+	NUTS_PASS(nng_http_handler_alloc_static(
+	    &h, "/", doc2, strlen(doc2), "text/plain"));
+	server_setup(&st, h);
+	nng_aio_set_timeout(st.aio, 5000);
+	NUTS_PASS(nng_aio_set_iov(st.aio, 1, &iov));
+	nng_http_write_all(st.conn, st.aio);
+	nng_aio_wait(st.aio);
+	NUTS_PASS(nng_aio_result(st.aio));
+
+	for (int i = 0; i < 2; i++) {
+		nng_http_reset(st.conn);
+		nng_http_read_response(st.conn, st.aio);
+		nng_aio_wait(st.aio);
+		NUTS_PASS(nng_aio_result(st.aio));
+		NUTS_HTTP_STATUS(st.conn, NNG_HTTP_STATUS_OK);
+		iov.iov_buf = body;
+		iov.iov_len = strlen(doc2);
+		NUTS_PASS(nng_aio_set_iov(st.aio, 1, &iov));
+		nng_http_read_all(st.conn, st.aio);
+		nng_aio_wait(st.aio);
+		NUTS_PASS(nng_aio_result(st.aio));
+		NUTS_TRUE(memcmp(body, doc2, strlen(doc2)) == 0);
+	}
 	server_free(&st);
 }
 
@@ -1594,6 +1735,7 @@ test_serve_subdir_index(void)
 
 NUTS_TESTS = {
 	{ "server basic", test_server_basic },
+	{ "server empty uri query", test_server_empty_uri_query },
 	{ "server unix", test_server_unix },
 	{ "server unix invalid URL", test_server_unix_invalid_url },
 	{ "server static binary", test_server_static_bin },
@@ -1609,6 +1751,8 @@ NUTS_TESTS = {
 	{ "server method too long", test_server_method_too_long },
 	{ "server uri too long", test_server_uri_too_long },
 	{ "server header too long", test_server_header_too_long },
+	{ "server many headers", test_server_many_headers },
+	{ "server pipelined requests", test_server_pipelined_requests },
 	{ "server invalid utf", test_server_invalid_utf8 },
 	{ "server post handler", test_server_post_handler },
 	{ "server transfer encoding", test_server_transfer_encoding },

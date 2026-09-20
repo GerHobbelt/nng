@@ -1,5 +1,8 @@
 name: linux
 on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "**.adoc", "**.md"]
   pull_request:
     types: [opened, synchronize, reopened]
     paths-ignore: ["docs/**", "**.adoc", "**.md"]
@@ -28,6 +31,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install ninja
         run: sudo apt-get install ninja-build
