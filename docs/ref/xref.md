@@ -104,6 +104,7 @@
 [`nng_aio_get_input`]: ../api/aio.md#inputs-and-outputs
 [`nng_aio_set_input`]: ../api/aio.md#inputs-and-outputs
 [`nng_aio_set_output`]: ../api/aio.md#inputs-and-outputs
+[`nng_aio_skip_callback`]: ../api/aio.md#skipping-callbacks
 [`nng_iov`]: ../api/aio.md#scatter-gather-vectors
 [`nng_socket_id`]: ../api/sock.md#socket-identity
 [`nng_socket_raw`]: ../api/sock.md#socket-identity
@@ -591,6 +592,7 @@
 [tcp]: ../tran/tcp.md
 [TLS]: ../api/tls.md
 [TLS transport]: ../tran/tls.md
+[DTLS transport]: ../tran/dtls.md
 [WebSocket transport]: ../tran/websocket.md
 [udp]: ../tran/udp.md
 [url]: ../api/url.md
