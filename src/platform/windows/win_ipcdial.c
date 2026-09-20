@@ -268,6 +268,7 @@ nni_win_ipc_sysinit(void)
 
 	NNI_LIST_INIT(&worker->workers, ipc_dialer, node);
 	NNI_LIST_INIT(&worker->waiters, ipc_dialer, node);
+	worker->exit = 0;
 
 	nni_mtx_init(&worker->mtx);
 	nni_cv_init(&worker->cv, &worker->mtx);

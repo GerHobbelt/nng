@@ -6,6 +6,7 @@ ignore:
  - "src/testing"
  - "perf"
  - "**/*_test.c"
+
 coverage:
   range: 50..95
   status:
