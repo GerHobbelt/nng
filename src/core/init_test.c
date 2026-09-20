@@ -30,6 +30,8 @@ test_init_zero_resolvers(void)
 	pp = nng_init_get_params();
 	NUTS_ASSERT(pp->num_resolver_threads > 0);
 	nng_fini();
+	// Leave the NUTS fixture's initialization for TEST_FINI to release.
+	NUTS_PASS(nng_init(NULL));
 }
 
 void
