@@ -114,12 +114,63 @@
 [`nng_socket_peer_name`]: ../api/sock.md#socket-identity
 [`nng_socket_get_recv_poll_fd`]: ../api/sock.md#polling-socket-events
 [`nng_socket_get_send_poll_fd`]: ../api/sock.md#polling-socket-events
+[`nng_dialer`]: ../api/endpoint.md#dialers-and-listeners
+[`nng_listener`]: ../api/endpoint.md#dialers-and-listeners
+[`nng_dial`]: ../api/endpoint.md#creating-and-starting
+[`nng_dial_url`]: ../api/endpoint.md#creating-and-starting
+[`nng_listen`]: ../api/endpoint.md#creating-and-starting
+[`nng_listen_url`]: ../api/endpoint.md#creating-and-starting
+[`nng_dialer_create`]: ../api/endpoint.md#creating-before-starting
+[`nng_dialer_create_url`]: ../api/endpoint.md#creating-before-starting
+[`nng_listener_create`]: ../api/endpoint.md#creating-before-starting
+[`nng_listener_create_url`]: ../api/endpoint.md#creating-before-starting
+[`nng_dialer_start`]: ../api/endpoint.md#starting
+[`nng_dialer_start_aio`]: ../api/endpoint.md#starting
+[`nng_listener_start`]: ../api/endpoint.md#starting
+[`nng_dialer_close`]: ../api/endpoint.md#closing
+[`nng_listener_close`]: ../api/endpoint.md#closing
+[`nng_dialer_id`]: ../api/endpoint.md#identity
+[`nng_listener_id`]: ../api/endpoint.md#identity
+[`nng_dialer_get_url`]: ../api/endpoint.md#associated-urls
+[`nng_listener_get_url`]: ../api/endpoint.md#associated-urls
+[`nng_dialer_get`]: ../api/endpoint.md#options
+[`nng_dialer_get_bool`]: ../api/endpoint.md#options
+[`nng_dialer_get_int`]: ../api/endpoint.md#options
+[`nng_dialer_get_ms`]: ../api/endpoint.md#options
+[`nng_dialer_get_size`]: ../api/endpoint.md#options
+[`nng_dialer_get_addr`]: ../api/endpoint.md#options
+[`nng_dialer_get_string`]: ../api/endpoint.md#options
+[`nng_dialer_get_uint64`]: ../api/endpoint.md#options
+[`nng_listener_get`]: ../api/endpoint.md#options
+[`nng_listener_get_bool`]: ../api/endpoint.md#options
+[`nng_listener_get_int`]: ../api/endpoint.md#options
+[`nng_listener_get_ms`]: ../api/endpoint.md#options
+[`nng_listener_get_size`]: ../api/endpoint.md#options
+[`nng_listener_get_string`]: ../api/endpoint.md#options
+[`nng_listener_get_uint64`]: ../api/endpoint.md#options
+[`nng_dialer_set`]: ../api/endpoint.md#options
+[`nng_dialer_set_bool`]: ../api/endpoint.md#options
+[`nng_dialer_set_int`]: ../api/endpoint.md#options
+[`nng_dialer_set_ms`]: ../api/endpoint.md#options
+[`nng_dialer_set_size`]: ../api/endpoint.md#options
+[`nng_dialer_set_addr`]: ../api/endpoint.md#options
+[`nng_dialer_set_string`]: ../api/endpoint.md#options
+[`nng_dialer_set_uint64`]: ../api/endpoint.md#options
+[`nng_listener_set`]: ../api/endpoint.md#options
+[`nng_listener_set_bool`]: ../api/endpoint.md#options
+[`nng_listener_set_int`]: ../api/endpoint.md#options
+[`nng_listener_set_ms`]: ../api/endpoint.md#options
+[`nng_listener_set_size`]: ../api/endpoint.md#options
+[`nng_listener_set_string`]: ../api/endpoint.md#options
+[`nng_listener_set_uint64`]: ../api/endpoint.md#options
+[`nng_listener_set_security_descriptor`]: ../api/endpoint.md#windows-security-descriptors
 [`nng_stream`]: ../api/stream.md#stream-type
 [`nng_stream_send`]: ../api/stream.md#sending-and-receiving-data
 [`nng_stream_recv`]: ../api/stream.md#sending-and-receiving-data
 [`nng_stream_close`]: ../api/stream.md#closing-a-stream
 [`nng_stream_stop`]: ../api/stream.md#closing-a-stream
 [`nng_stream_free`]: ../api/stream.md#closing-a-stream
+[`nng_stream_peer_cert`]: ../api/stream.md#tls-peer-certificates
 [`nng_stream_get`]: ../api/stream.md#getting-stream-options
 [`nng_stream_get_bool`]: ../api/stream.md#getting-stream-options
 [`nng_stream_get_int`]: ../api/stream.md#getting-stream-options
@@ -198,29 +249,29 @@
 [`nng_req0_open_raw`]: ../api/sock.md#raw-mode-sockets
 [`nng_sub0_open_raw`]: ../api/sock.md#raw-mode-sockets
 [`nng_surveyor0_open_raw`]: ../api/sock.md#raw-mode-sockets
-[`nng_dialer_set_tls`]: ../TODO.md
-[`nng_dialer_get_tls`]: ../TODO.md
-[`nng_listener_set_tls`]: ../TODO.md
-[`nng_listener_get_tls`]: ../TODO.md
+[`nng_dialer_set_tls`]: ../api/tls.md#using-configuration-objects
+[`nng_dialer_get_tls`]: ../api/tls.md#using-configuration-objects
+[`nng_listener_set_tls`]: ../api/tls.md#using-configuration-objects
+[`nng_listener_get_tls`]: ../api/tls.md#using-configuration-objects
 [`nng_args_parse`]: ../api/args.md#parse-command-line-arguments
 [`nng_aio_finish`]: ../api/aio.md#finishing-an-operation
 [`nng_aio_reset`]: ../api/aio.md#starting-an-operation
 [`nng_aio_start`]: ../api/aio.md#starting-an-operation
 [`nng_recv`]: ../TODO.md
-[`nng_listener_get_url`]: ../TODO.md
-[`nng_dialer_get_url`]: ../TODO.md
-[`nng_tls_config`]: ../TODO.md
-[`nng_tls_config_own_cert`]: ../TODO.md
-[`nng_listener_set_security_descriptor`]: ../TODO.md
-[`nng_device`]: ../TODO.md
-[`nng_dial`]: ../TODO.md
-[`nng_dialer_create`]: ../TODO.md
-[`nng_dialer_close`]: ../TODO.md
-[`nng_dialer_set`]: ../TODO.md
-[`nng_listen`]: ../TODO.md
-[`nng_listener_create`]: ../TODO.md
-[`nng_listener_close`]: ../TODO.md
-[`nng_listener_set`]: ../TODO.md
+[`nng_tls_config`]: ../api/tls.md#configuration-objects
+[`nng_tls_config_alloc`]: ../api/tls.md#configuration-objects
+[`nng_tls_config_hold`]: ../api/tls.md#configuration-objects
+[`nng_tls_config_free`]: ../api/tls.md#configuration-objects
+[`nng_tls_config_auth_mode`]: ../api/tls.md#authentication-mode
+[`nng_tls_config_ca_chain`]: ../api/tls.md#certificates-and-keys
+[`nng_tls_config_ca_file`]: ../api/tls.md#certificates-and-keys
+[`nng_tls_config_own_cert`]: ../api/tls.md#certificates-and-keys
+[`nng_tls_config_cert_key_file`]: ../api/tls.md#certificates-and-keys
+[`nng_tls_config_server_name`]: ../api/tls.md#certificates-and-keys
+[`nng_tls_config_psk`]: ../api/tls.md#pre-shared-keys
+[`nng_tls_config_version`]: ../api/tls.md#tls-versions
+[`nng_device`]: ../api/device.md
+[`nng_device_aio`]: ../api/device.md#asynchronous-devices
 [`nng_socket_set_bool`]: ../api/sock.md#socket-options
 [`nng_socket_set_int`]: ../api/sock.md#socket-options
 [`nng_socket_set_ms`]: ../api/sock.md#socket-options
@@ -256,12 +307,17 @@
 [`nng_pipe_notify`]: ../api/pipe.md#pipe-notifications
 [`nng_pipe_peer_addr`]: ../api/pipe.md#pipe-socket-addresses
 [`nng_pipe_self_addr`]: ../api/pipe.md#pipe-socket-addresses
-[`nng_sockaddr`]: ../TODO.md
-[`nng_sockaddr_in`]: ../TODO.md
-[`nng_sockaddr_in6`]: ../TODO.md
-[`nng_sockaddr_ipc`]: ../TODO.md
-[`nng_sockaddr_inproc`]: ../TODO.md
-[`nng_sockaddr_abstract`]: ../TODO.md
+[`nng_pipe_peer_cert`]: ../api/tls.md#peer-certificates
+[`nng_sockaddr`]: ../api/sockaddr.md#socket-addresses
+[`nng_sockaddr_in`]: ../api/sockaddr.md#ipv4-addresses
+[`nng_sockaddr_in6`]: ../api/sockaddr.md#ipv6-addresses
+[`nng_sockaddr_ipc`]: ../api/sockaddr.md#ipc-addresses
+[`nng_sockaddr_inproc`]: ../api/sockaddr.md#in-process-addresses
+[`nng_sockaddr_abstract`]: ../api/sockaddr.md#abstract-addresses
+[`nng_str_sockaddr`]: ../api/sockaddr.md#format-an-address
+[`nng_sockaddr_port`]: ../api/sockaddr.md#address-port
+[`nng_sockaddr_equal`]: ../api/sockaddr.md#compare-addresses
+[`nng_sockaddr_hash`]: ../api/sockaddr.md#hash-an-address
 
 <!-- HTTP -->
 
@@ -272,10 +328,34 @@
 [`nng_http_client_connect`]: ../api/http.md#creating-connections
 [`nng_http_client_set_tls`]: ../api/http.md#client-tls
 [`nng_http_client_get_tls`]: ../api/http.md#client-tls
+[`nng_http_server_hold`]: ../api/http.md#acquire-a-server
+[`nng_http_server_release`]: ../api/http.md#release-a-server
+[`nng_http_server_start`]: ../api/http.md#start-a-server
+[`nng_http_server_stop`]: ../api/http.md#stop-a-server
+[`nng_http_server_get_port`]: ../api/http.md#listening-port
+[`nng_http_server_set_tls`]: ../api/http.md#server-tls
+[`nng_http_server_get_tls`]: ../api/http.md#server-tls
+[`nng_http_server_add_handler`]: ../api/http.md#registering-a-handler
+[`nng_http_server_del_handler`]: ../api/http.md#unregistering-a-handler
+[`nng_http_server_set_error_page`]: ../api/http.md#custom-error-pages
+[`nng_http_server_set_error_file`]: ../api/http.md#custom-error-pages
+[`nng_http_server_error`]: ../api/http.md#applying-a-custom-error-page
+[`nng_http_handler_alloc`]: ../api/http.md#implementing-a-handler
+[`nng_http_handler_free`]: ../api/http.md#freeing-handler
+[`nng_http_handler_alloc_directory`]: ../api/http.md#serving-directories-and-files
+[`nng_http_handler_alloc_file`]: ../api/http.md#serving-directories-and-files
+[`nng_http_handler_alloc_static`]: ../api/http.md#static-handler
+[`nng_http_handler_alloc_redirect`]: ../api/http.md#redirect-handler
+[`nng_http_handler_collect_body`]: ../api/http.md#collecting-request-body
+[`nng_http_handler_set_data`]: ../api/http.md#setting-callback-argument
+[`nng_http_handler_set_method`]: ../api/http.md#setting-the-method
+[`nng_http_handler_set_host`]: ../api/http.md#filtering-by-host
+[`nng_http_handler_set_tree`]: ../api/http.md#handling-an-entire-tree
+[`nng_http_peer_cert`]: ../api/http.md#obtaining-tls-connection-details
 [`nng_http_close`]: ../api/http.md#closing-the-connection
 [`nng_http_reset`]: ../api/http.md#reset-connection-state
-[`nng_http_get_version`]: ../api/http.md#http-protocol-versions
-[`nng_http_set_version`]: ../api/http.md#http-protocol-versions
+[`nng_http_get_version`]: ../api/http.md#http-version
+[`nng_http_set_version`]: ../api/http.md#http-version
 [`nng_http_get_method`]: ../api/http.md#http-method
 [`nng_http_set_method`]: ../api/http.md#http-method
 [`nng_http_set_uri`]: ../api/http.md#http-uri
@@ -293,27 +373,17 @@
 [`nng_http_copy_body`]: ../api/http.md#storing-body-content
 [`nng_http_set_body`]: ../api/http.md#storing-body-content
 [`nng_http_get_body`]: ../api/http.md#retrieving-body-content
-[`nng_http_read_response_body`]: ../TODO.md
-[`nng_http_read_request_body`]: ../TODO.md
-[`nng_http_server_set_error`]: ../TODO.md
-[`nng_http_server_set_redirect`]: ../TODO.md
-[`nng_http_read`]: ../api/http.md#direct-read-and-write
-[`nng_http_read`]: ../api/http.md#direct-read-and-write
-[`nng_http_read_all`]: ../api/http.md#direct-read-and-write
-[`nng_http_write`]: ../api/http.md#direct-read-and-write
-[`nng_http_write_all`]: ../api/http.md#direct-read-and-write
-[`nng_http_handler`]: ../api/http.md#handlers
-[`nng_http_handler_alloc`]: ../api/http.md#handlers
-[`nng_http_handler_free`]: ../api/http.md#freeing-handler
-[`nng_http_write_response`]: ../api/http.md#sending-the-response-explicitly
-[`nng_http_handler_collect_body`]: ../api/http.md#collecting-request-body
-[`nng_http_handler_set_host`]: ../api/http.md#filtering-byt-host
-[`nng_http_handler_set_method`]: ../api/http.md#setting-the-method
-[`nng_http_handler_set_data`]: ../api/http.md#setting-the-callback-argument
-[`nng_http_handler_set_tree`]: ../api/http.md#handling-an-entire-tree
-[`nng_http_transact`]: ../api/http.md#submitting-the-transaction
 [`nng_http_local_address`]: ../api/http.md#socket-addresses
 [`nng_http_remote_address`]: ../api/http.md#socket-addresses
+[`nng_http_read_response_body`]: ../TODO.md
+[`nng_http_read_request_body`]: ../TODO.md
+[`nng_http_read`]: ../api/http.md#direct-read-and-write
+[`nng_http_write`]: ../api/http.md#direct-read-and-write
+[`nng_http_read_all`]: ../api/http.md#direct-read-and-write
+[`nng_http_write_all`]: ../api/http.md#direct-read-and-write
+[`nng_http_write_response`]: ../api/http.md#sending-the-response-explicitly
+[`nng_http_handler`]: ../api/http.md#handlers
+[`nng_http_transact`]: ../api/http.md#submitting-the-transaction
 
 <!-- HTTP Status -->
 
@@ -380,8 +450,28 @@
 
 <!-- TLS -->
 
-[`nng_tls_cert`]: ../TODO.md
-[`nng_tls_cert`]: ../TODO.md
+[`nng_tls_cert`]: ../api/tls.md#peer-certificates
+[`nng_tls_cert_parse_pem`]: ../api/tls.md#peer-certificates
+[`nng_tls_cert_parse_der`]: ../api/tls.md#peer-certificates
+[`nng_tls_cert_der`]: ../api/tls.md#peer-certificates
+[`nng_tls_cert_free`]: ../api/tls.md#peer-certificates
+[`nng_tls_cert_subject`]: ../api/tls.md#peer-certificates
+[`nng_tls_cert_issuer`]: ../api/tls.md#peer-certificates
+[`nng_tls_cert_serial_number`]: ../api/tls.md#peer-certificates
+[`nng_tls_cert_subject_cn`]: ../api/tls.md#peer-certificates
+[`nng_tls_cert_next_alt`]: ../api/tls.md#peer-certificates
+[`nng_tls_cert_not_before`]: ../api/tls.md#peer-certificates
+[`nng_tls_cert_not_after`]: ../api/tls.md#peer-certificates
+[`nng_tls_engine_name`]: ../api/tls.md#tls-engine
+[`nng_tls_engine_description`]: ../api/tls.md#tls-engine
+[`nng_tls_engine_fips_mode`]: ../api/tls.md#tls-engine
+[`NNG_TLS_MODE_CLIENT`]: ../api/tls.md#configuration-objects
+[`NNG_TLS_MODE_SERVER`]: ../api/tls.md#configuration-objects
+[`NNG_TLS_AUTH_MODE_NONE`]: ../api/tls.md#authentication-mode
+[`NNG_TLS_AUTH_MODE_OPTIONAL`]: ../api/tls.md#authentication-mode
+[`NNG_TLS_AUTH_MODE_REQUIRED`]: ../api/tls.md#authentication-mode
+[`NNG_TLS_1_2`]: ../api/tls.md#tls-versions
+[`NNG_TLS_1_3`]: ../api/tls.md#tls-versions
 
 <!-- Macros -->
 
@@ -436,8 +526,9 @@
 [`NNG_UNIT_MESSAGES`]: ../api/stats.md#statistic-units
 [`NNG_UNIT_MILLIS`]: ../api/stats.md#statistic-units
 [`NNG_UNIT_EVENTS`]: ../api/stats.md#statistic-units
-[`NNG_FLAG_NONBLOCK`]: ../TODO.md
-[`NNG_OPT_LISTEN_FD`]: ../api/streams.md#socket-activation
+[`NNG_FLAG_NONBLOCK`]: ../api/sock.md#NNG_FLAG_NONBLOCK
+[`NNG_OPT_LISTEN_FD`]: ../api/stream.md#socket-activation
+[`NNG_OPT_LOCADDR`]: ../api/endpoint.md#endpoint-specific-options
 [`NNG_OPT_MAXTTL`]: ../api/sock.md#NNG_OPT_MAXTTL
 [`NNG_OPT_RECONNMAXT`]: ../api/sock.md#NNG_OPT_RECONNMAXT
 [`NNG_OPT_RECONNMINT`]: ../api/sock.md#NNG_OPT_RECONNMINT
@@ -452,15 +543,34 @@
 [`NNG_OPT_PEER_ZONEID`]: ../tran/ipc.md#NNG_OPT_PEER_ZONEID
 [`NNG_OPT_SUB_PREF_NEW`]: ../proto/sub.md#protocol-options
 [`NNG_OPT_IPC_PERMISSIONS`]: ../tran/ipc.md#NNG_OPT_IPC_PERMISSIONS
+[`NNG_OPT_TCP_KEEPALIVE`]: ../tran/tcp.md#transport-options
+[`NNG_OPT_TCP_NODELAY`]: ../tran/tcp.md#transport-options
+[`NNG_OPT_TLS_VERIFIED`]: ../tran/tls.md#NNG_OPT_TLS_VERIFIED
+[`NNG_OPT_TLS_PEER_CN`]: ../tran/tls.md#NNG_OPT_TLS_PEER_CN
+[`NNG_OPT_WS_HEADER`]: ../tran/websocket.md#NNG_OPT_WS_HEADER
+[`NNG_OPT_WS_HEADER_NEXT`]: ../tran/websocket.md#NNG_OPT_WS_HEADER_NEXT
+[`NNG_OPT_WS_HEADER_RESET`]: ../tran/websocket.md#NNG_OPT_WS_HEADER_RESET
+[`NNG_OPT_WS_HEADER_KEY`]: ../tran/websocket.md#NNG_OPT_WS_HEADER_KEY
+[`NNG_OPT_WS_HEADER_VALUE`]: ../tran/websocket.md#NNG_OPT_WS_HEADER_VALUE
+[`NNG_OPT_WS_REQUEST_URI`]: ../tran/websocket.md#NNG_OPT_WS_REQUEST_URI
+[`NNG_OPT_WS_SENDMAXFRAME`]: ../tran/websocket.md#NNG_OPT_WS_SENDMAXFRAME
+[`NNG_OPT_WS_RECVMAXFRAME`]: ../tran/websocket.md#NNG_OPT_WS_RECVMAXFRAME
+[`NNG_OPT_WS_PROTOCOL`]: ../tran/websocket.md#NNG_OPT_WS_PROTOCOL
+[`NNG_OPT_WS_SEND_TEXT`]: ../tran/websocket.md#NNG_OPT_WS_SEND_TEXT
+[`NNG_OPT_WS_RECV_TEXT`]: ../tran/websocket.md#NNG_OPT_WS_RECV_TEXT
 [`NNG_SOCKET_INITIALIZER`]: ../api/sock.md#socket-structure
 [`NNG_CTX_INITIALIZER`]: ../api/ctx.md#context-structure
 [`NNG_PIPE_INITIALIZER`]: ../api/pipe.md#initialization
+[`NNG_DIALER_INITIALIZER`]: ../api/endpoint.md#initialization
+[`NNG_LISTENER_INITIALIZER`]: ../api/endpoint.md#initialization
 [`NNG_PIPE_EV_ADD_PRE`]: ../api/pipe.md#NNG_PIPE_EV_ADD_PRE
 [`NNG_PIPE_EV_ADD_POST`]: ../api/pipe.md#NNG_PIPE_EV_ADD_POST
 [`NNG_PIPE_EV_REM_POST`]: ../api/pipe.md#NNG_PIPE_EV_REM_POST
 
 <!-- Protocols -->
 
+[proto]: ../proto/index.md
+[protocol]: ../proto/index.md
 [bus]: ../proto/bus.md
 [pair]: ../proto/pair.md
 [pub]: ../proto/pub.md
@@ -474,11 +584,20 @@
 
 <!-- Transports -->
 
+[tran]: ../tran/index.md
 [socktran]: ../tran/socket.md
 [ipc]: ../tran/ipc.md
 [inproc]: ../tran/inproc.md
 [tcp]: ../tran/tcp.md
+[TLS]: ../api/tls.md
+[TLS transport]: ../tran/tls.md
+[WebSocket transport]: ../tran/websocket.md
 [udp]: ../tran/udp.md
+[url]: ../api/url.md
+[nngcat]: ../tools/nngcat.md
+[streams]: ../api/stream.md
+[id map]: ../api/id_map.md
+[tls-config-objects]: ../api/tls.md#using-configuration-objects
 
 <!-- Concept index -->
 
@@ -487,10 +606,12 @@
 [raw]: ../api/sock.md#raw-mode-sockets
 [pipe]: ../api/pipe.md
 [socket]: ../api/sock.md
+[socket-options]: ../api/sock.md#socket-options
 [context]: ../api/ctx.md
-[device]: ../TODO.md
-[dialer]: ../TODO.md
-[listener]: ../TODO.md
+[device]: ../api/device.md
+[dialer]: ../api/endpoint.md
+[listener]: ../api/endpoint.md
+[endpoint]: ../api/endpoint.md
 [message]: ../api/msg.md
 [stream]: ../api/stream.md
 [message-body]: ../api/msg.md#message-body

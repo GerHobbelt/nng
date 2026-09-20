@@ -39,20 +39,19 @@ static pfnSetThreadDescription set_thread_desc;
 void *
 nni_alloc(size_t sz)
 {
-	return (sz > 0 ? malloc(sz) : NULL);
+	return (sz > 0 ? nni_malloc_fn(sz) : NULL);
 }
 
 void *
 nni_zalloc(size_t sz)
 {
-	return (sz > 0 ? calloc(1, sz) : NULL);
+	return (sz > 0 ? nni_calloc_fn(1, sz) : NULL);
 }
 
 void
 nni_free(void *b, size_t z)
 {
-	NNI_ARG_UNUSED(z);
-	free(b);
+	nni_free_fn(b, z);
 }
 
 void
@@ -440,7 +439,6 @@ nni_plat_fini(void)
 	nni_win_udp_sysfini();
 	nni_win_tcp_sysfini();
 	nni_win_io_sysfini();
-	WSACleanup();
 	if (hKernel32 != NULL) {
 		FreeLibrary(hKernel32);
 	}

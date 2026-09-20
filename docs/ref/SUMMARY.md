@@ -3,6 +3,7 @@
 [Copyright](./copyright.md)
 [Dedication](./dedication.md)
 [Preface](./preface.md)
+[Overview](./overview/index.md)
 
 - [API Reference](./api/index.md)
 
@@ -11,6 +12,10 @@
   - [Messages](./api/msg.md)
 
   - [Sockets](./api/sock.md)
+
+  - [Dialers and Listeners](./api/endpoint.md)
+
+  - [Devices](./api/device.md)
 
   - [Contexts](./api/ctx.md)
 
@@ -21,6 +26,8 @@
   - [Time](./api/time.md)
 
   - [URLs](./api/url.md)
+
+  - [Socket Addresses](./api/sockaddr.md)
 
   - [Asynchronous I/O](./api/aio.md)
 
@@ -35,6 +42,8 @@
   - [Errors](./api/errors.md)
 
   - [Streams](./api/stream.md)
+
+  - [TLS](./api/tls.md)
 
   - [HTTP](./api/http.md)
 
@@ -61,8 +70,15 @@
 
   - [Intra-Process Transport](./tran/inproc.md)
   - [Inter-Process Transport](./tran/ipc.md)
+  - [TCP Transport](./tran/tcp.md)
+  - [TLS Transport](./tran/tls.md)
+  - [WebSocket Transport](./tran/websocket.md)
   - [BSD Socket (Experimental)](./tran/socket.md)
   - [UDP Transport (Experimental)](./tran/udp.md)
+
+- [Tools](./tools/index.md)
+
+  - [nngcat](./tools/nngcat.md)
 
 - [Migration Guides](./migrate/index.md)
 

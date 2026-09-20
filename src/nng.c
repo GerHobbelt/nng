@@ -8,6 +8,8 @@
 // found online at https://opensource.org/licenses/MIT.
 //
 
+#include "core/alloc.h"
+#include "core/defs.h"
 #include "core/nng_impl.h"
 #include "core/pipe.h"
 #include "core/platform.h"
@@ -37,8 +39,7 @@ nng_socket_close(nng_socket s)
 		return (rv);
 	}
 	// No release -- close releases it.
-	nni_sock_close(sock);
-	return (0);
+	return (nni_sock_close(sock));
 }
 
 int
@@ -1409,6 +1410,24 @@ nng_err
 nng_pipe_get_ms(nng_pipe id, const char *n, nng_duration *v)
 {
 	return (pipe_get(id, n, v, NULL, NNI_TYPE_DURATION));
+}
+
+nng_err
+nng_pipe_get_scheme(nng_pipe p, const char **schemep)
+{
+	nng_err     rv;
+	nni_pipe   *pipe;
+	const char *scheme;
+
+	if ((rv = nni_pipe_find(&pipe, p.id)) != 0) {
+		return (rv);
+	}
+	scheme = nni_pipe_scheme(pipe);
+	if (scheme != NULL) {
+		*schemep = scheme;
+	}
+	nni_pipe_rele(pipe);
+	return (scheme == NULL ? NNG_ENOTSUP : NNG_OK);
 }
 
 nng_err
