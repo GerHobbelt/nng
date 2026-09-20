@@ -1,5 +1,5 @@
 //
-// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2026 Staysail Systems, Inc. <info@staysail.tech>
 // Copyright 2018 Capitar IT Group BV <info@capitar.com>
 // Copyright 2018 QXSoftware <lh563566994@126.com>
 // Copyright 2019 Devolutions <info@devolutions.net>
@@ -84,7 +84,9 @@ struct nng_http_server {
 	nni_aio              accaio;
 	nng_stream_listener *listener;
 	uint32_t             port; // native order
+	bool                 is_unix;
 	char                *hostname;
+	char                *path;
 	nni_list             errors;
 	nni_mtx              errors_mtx;
 	nni_reap_node        reap;
@@ -421,6 +423,31 @@ http_handler_host_match(nni_http_handler *h, const char *host)
 	return (true);
 }
 
+static bool
+http_parse_content_length(const char *str, size_t *sizep)
+{
+	size_t size = 0;
+
+	if (*str == '\0') {
+		return (false);
+	}
+	for (; *str != '\0'; str++) {
+		size_t digit;
+
+		if ((*str < '0') || (*str > '9')) {
+			return (false);
+		}
+		digit = (size_t) (*str - '0');
+		if (size > ((SIZE_MAX - digit) / 10)) {
+			return (false);
+		}
+		size = (size * 10) + digit;
+	}
+
+	*sizep = size;
+	return (true);
+}
+
 static void
 http_sconn_rxdone(void *arg)
 {
@@ -511,10 +538,8 @@ http_sconn_rxdone(void *arg)
 
 	sc->unconsumed_body = 0;
 	if ((cls = nni_http_get_header(sc->conn, "Content-Length")) != NULL) {
-		char *end;
-		sc->unconsumed_body = strtoull(cls, &end, 10);
-		if ((end == NULL) && (*end != '\0')) {
-			sc->unconsumed_body = 0;
+		if (!http_parse_content_length(cls, &sc->unconsumed_body)) {
+			sc->close = true;
 			http_sconn_error(sc, NNG_HTTP_STATUS_BAD_REQUEST);
 			return;
 		}
@@ -541,6 +566,7 @@ http_sconn_rxdone(void *arg)
 		}
 		switch (uri[len]) {
 		case '\0':
+		case '?':
 			break;
 		case '/':
 			if ((uri[len + 1] != '\0') && (!h->tree)) {
@@ -789,6 +815,7 @@ http_server_fini(nni_http_server *s)
 	nni_aio_fini(&s->accaio);
 	nni_mtx_fini(&s->mtx);
 	nni_strfree(s->hostname);
+	nni_strfree(s->path);
 	NNI_FREE_STRUCT(s);
 }
 
@@ -798,14 +825,12 @@ http_server_init(nni_http_server **serverp, const nng_url *url)
 	nni_http_server *s;
 	nng_err          rv;
 	nng_url          my_url;
-	const char      *scheme;
+	char             unix_path[NNG_MAXADDRLEN];
 
-	if ((scheme = nni_http_stream_scheme(url->u_scheme)) == NULL) {
-		return (NNG_EADDRINVAL);
+	if ((rv = nni_http_stream_url(
+	         &my_url, url, unix_path, sizeof(unix_path))) != NNG_OK) {
+		return (rv);
 	}
-	// Rewrite URLs to either TLS or TCP.
-	memcpy(&my_url, url, sizeof(my_url));
-	my_url.u_scheme = (char *) scheme;
 
 	if ((s = NNI_ALLOC_STRUCT(s)) == NULL) {
 		return (NNG_ENOMEM);
@@ -820,9 +845,11 @@ http_server_init(nni_http_server **serverp, const nng_url *url)
 
 	nni_aio_init(&s->accaio, http_server_acccb, s);
 
+	s->is_unix = (strcmp(url->u_scheme, "http+unix") == 0);
 	s->port = url->u_port;
 
-	if ((s->hostname = nni_strdup(url->u_hostname)) == NULL) {
+	if (s->is_unix ? ((s->path = nni_strdup(my_url.u_path)) == NULL) :
+	                 ((s->hostname = nni_strdup(url->u_hostname)) == NULL)) {
 		http_server_fini(s);
 		return (NNG_ENOMEM);
 	}
@@ -842,12 +869,24 @@ nni_http_server_init(nni_http_server **serverp, const nng_url *url)
 {
 	nng_err          rv;
 	nni_http_server *s;
+	nng_url          stream_url;
+	char             unix_path[NNG_MAXADDRLEN];
+	bool             is_unix;
+
+	if ((rv = nni_http_stream_url(
+	         &stream_url, url, unix_path, sizeof(unix_path))) != NNG_OK) {
+		return (rv);
+	}
+	is_unix = (strcmp(url->u_scheme, "http+unix") == 0);
 
 	nni_mtx_lock(&http_servers_lk);
 	NNI_LIST_FOREACH (&http_servers, s) {
 		nni_mtx_lock(&s->mtx);
-		if ((!s->closed) && (url->u_port == s->port) &&
-		    (strcmp(url->u_hostname, s->hostname) == 0)) {
+		if ((!s->closed) &&
+		    (s->is_unix == is_unix) &&
+		    (s->is_unix ? (strcmp(stream_url.u_path, s->path) == 0) :
+		               ((url->u_port == s->port) &&
+		                   (strcmp(url->u_hostname, s->hostname) == 0)))) {
 			*serverp = s;
 			s->refcnt++;
 			nni_mtx_unlock(&s->mtx);
@@ -874,7 +913,7 @@ http_server_start(nni_http_server *s)
 	if ((rv = nng_stream_listener_listen(s->listener)) != 0) {
 		return (rv);
 	}
-	if (s->port == 0) {
+	if ((!s->is_unix) && (s->port == 0)) {
 		int port;
 		nng_stream_listener_get_int(
 		    s->listener, NNG_OPT_BOUND_PORT, &port);
@@ -1303,6 +1342,21 @@ http_handle_dir(nng_http *conn, void *arg, nng_aio *aio)
 	        ((uri[len] != 0) && (uri[len] != '/')))) {
 		// This should never happen!
 		nni_aio_finish_error(aio, NNG_EINVAL);
+		return;
+	}
+
+	// The request parser rejects these characters, but check again before
+	// building a filesystem path in case a request reaches this handler by
+	// another route.  A fragment is not part of an HTTP request-target, and a
+	// backslash is a directory separator on Windows.
+	if ((strchr(uri + len, '#') != NULL) ||
+	    (strchr(uri + len, '\\') != NULL)) {
+		if ((rv = nni_http_set_error(
+		         conn, NNG_HTTP_STATUS_BAD_REQUEST, NULL, NULL)) != 0) {
+			nni_aio_finish_error(aio, rv);
+			return;
+		}
+		nni_aio_finish(aio, NNG_OK, 0);
 		return;
 	}
 

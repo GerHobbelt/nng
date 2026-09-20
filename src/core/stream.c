@@ -1,5 +1,5 @@
 //
-// Copyright 2025 Staysail Systems, Inc. <info@staysail.tech>
+// Copyright 2026 Staysail Systems, Inc. <info@staysail.tech>
 //
 // This software is supplied under the terms of the MIT License, a
 // copy of which should be located in the distribution where this
@@ -38,6 +38,12 @@ static struct {
 	    .scheme         = "unix",
 	    .dialer_alloc   = nni_ipc_dialer_alloc,
 	    .listener_alloc = nni_ipc_listener_alloc,
+	},
+#elif defined(NNG_HAVE_UNIX_SOCKETS)
+	{
+	    .scheme         = "unix",
+	    .dialer_alloc   = nni_unix_dialer_alloc,
+	    .listener_alloc = nni_unix_listener_alloc,
 	},
 #endif
 #ifdef NNG_HAVE_ABSTRACT_SOCKETS
@@ -376,6 +382,12 @@ nng_err
 nng_stream_get_size(nng_stream *s, const char *n, size_t *v)
 {
 	return (nni_stream_get(s, n, v, NULL, NNI_TYPE_SIZE));
+}
+
+nng_err
+nng_stream_get_uint64(nng_stream *s, const char *n, uint64_t *v)
+{
+	return (nni_stream_get(s, n, v, NULL, NNI_TYPE_UINT64));
 }
 
 nng_err
