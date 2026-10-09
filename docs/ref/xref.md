@@ -260,7 +260,6 @@
 [`nng_aio_finish`]: ../api/aio.md#finishing-an-operation
 [`nng_aio_reset`]: ../api/aio.md#starting-an-operation
 [`nng_aio_start`]: ../api/aio.md#starting-an-operation
-[`nng_recv`]: ../TODO.md
 [`nng_tls_config`]: ../api/tls.md#configuration-objects
 [`nng_tls_config_alloc`]: ../api/tls.md#configuration-objects
 [`nng_tls_config_hold`]: ../api/tls.md#configuration-objects
@@ -367,7 +366,7 @@
 [`nng_http_status`]: ../api/http.md#http-status
 [`nng_http_get_status`]: ../api/http.md#http-status
 [`nng_http_set_status`]: ../api/http.md#http-status
-[`nng_http_hijack`]: ../api/http.md#hijacking-connections
+[`nng_http_hijack_stream`]: ../api/http.md#hijacking-connections
 [`nng_http_get_header`]: ../api/http.md#retrieving-headers
 [`nng_http_next_header`]: ../api/http.md#retrieving-headers
 [`nng_http_add_header`]: ../api/http.md#modifying-headers
@@ -378,8 +377,6 @@
 [`nng_http_get_body`]: ../api/http.md#retrieving-body-content
 [`nng_http_local_address`]: ../api/http.md#socket-addresses
 [`nng_http_remote_address`]: ../api/http.md#socket-addresses
-[`nng_http_read_response_body`]: ../TODO.md
-[`nng_http_read_request_body`]: ../TODO.md
 [`nng_http_read`]: ../api/http.md#direct-read-and-write
 [`nng_http_write`]: ../api/http.md#direct-read-and-write
 [`nng_http_read_all`]: ../api/http.md#direct-read-and-write

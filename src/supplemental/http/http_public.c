@@ -672,12 +672,13 @@ nng_http_server_error(nng_http_server *srv, nng_http *conn)
 }
 
 nng_err
-nng_http_hijack(nng_http *conn)
+nng_http_hijack_stream(nng_http *conn, nng_stream **streamp)
 {
 #ifdef NNG_SUPP_HTTP
-	return (nni_http_hijack(conn));
+	return (nni_http_hijack_stream(conn, streamp));
 #else
 	NNI_ARG_UNUSED(conn);
+	NNI_ARG_UNUSED(streamp);
 	return (NNG_ENOTSUP);
 #endif
 }

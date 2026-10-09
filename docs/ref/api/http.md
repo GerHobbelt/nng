@@ -352,26 +352,26 @@ operations until the entire amount of data requested by the [`nng_iov`] is trans
 > [!NOTE]
 > These functions perform no special handling for chunked transfers.
 
-These functions are most likely to be useful after hijacking the connection with [`nng_http_hijack`].
+These functions are most likely to be useful after hijacking the connection with [`nng_http_hijack_stream`].
 They can be used to transfer request or response body data as well.
 
 ### Hijacking Connections
 
 ```c
-nng_err nng_http_hijack(nng_http *conn);
+nng_err nng_http_hijack_stream(nng_http *conn, nng_stream **streamp);
 ```
 
-TODO: This API will change to convert the conn into a stream object.
-
-The {{i:`nng_http_hijack`}} function hijacks the connection _conn_, causing it
-to be disassociated from the HTTP server where it was created.
-
-The purpose of this function is the creation of HTTP upgraders (such as
-WebSocket), where the underlying HTTP connection will be taken over for
-some other purpose, and should not be used any further by the server.
+The {{i:`nng_http_hijack_stream`}} function hijacks the connection _conn_, causing it
+to be disassociated from the HTTP server where it was created, and returns it as an [`nng_stream`].
+It is intended for HTTP upgraders, such as WebSocket, that take over the underlying connection.
 
 This function is most useful when called from a handler function.
 (See [`nng_http_handler_alloc`].)
+
+The stream preserves any bytes already read by the HTTP parser before receiving subsequent data from the underlying connection.
+It takes ownership of _conn_; after successful completion, _conn_ must not be used or closed separately.
+Release the connection by calling [`nng_stream_free`] on the returned stream.
+It can also be used with a client connection after a protocol-upgrade response has been read.
 
 > [!NOTE]
 > It is the responsibility of the caller to dispose of the underlying connection when it is no longer needed.
@@ -387,8 +387,6 @@ This function is most useful when called from a handler function.
 ```c
 nng_err nng_http_peer_cert(nng_http *conn, nng_tls_cert **certp);
 ```
-
-TODO: We need to document the cert API.
 
 The {{i:`nng_http_peer_cert`}} function will obtain the TLS certificate object for the peer, if one is available.
 This can then be used for additional authentication or identity specific logic.
@@ -1114,7 +1112,7 @@ void nng_http_write_response(nng_http *conn, nng_aio *aio);
 ```
 
 Normally the server will send any attached response, but there are circumstances where
-a response must be sent manually, such as when [hijacking][`nng_http_hijack`] a connection.
+a response must be sent manually, such as when [hijacking][`nng_http_hijack_stream`] a connection.
 
 In such a case, {{i:`nng_http_write_response`}} can be called, which will send the response and any attached data, asynchronously
 using the [`nng_aio`] _aio_.
