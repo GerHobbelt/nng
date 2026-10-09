@@ -182,20 +182,33 @@ NNG 1.x had an undocumented ability to specify the local address to bind
 to when dialing, by using the local address in front of the destination
 address separated by a semicolon. This was provided for legacy libnanomsg
 compatibility, and is no longer offered. The correct way to specify a
-local address is by setting `NNG_OPT_LOCADDR` on the dialer.
+local address is by calling [`nng_dialer_bind`] before starting the dialer.
 
 ## Support for Address Options Removed
 
-The `NNG_OPT_REMADDR` and `NNG_OPT_LOCADDR` options are removed. For streams and pipes, there are
-[`nng_stream_peer_addr`] and [`nng_pipe_peer_addr`] functions. For dialers
-and stream dialers, the application should track the relevant information
-used to configure the listener. Functions formerly used to configure these are
-removed as well.
+The `NNG_OPT_REMADDR` and `NNG_OPT_LOCADDR` options are removed. For streams
+and pipes, use [`nng_stream_peer_addr`] and [`nng_pipe_peer_addr`]. To
+configure a local source address before dialing, use [`nng_dialer_bind`] or
+[`nng_stream_dialer_bind`].
 
 ## IPC Option Type Changes
 
 The types of [`NNG_OPT_PEER_GID`], [`NNG_OPT_PEER_PID`], [`NNG_OPT_PEER_UID`], and [`NNG_OPT_PEER_ZONEID`]
 have changed from `uint64_t` to `int`. The underlying platforms all use 32-bit quantities for these.
+
+## Windows IPC Scheme Changes
+
+On Windows, legacy NNG, nanomsg, and mangos applications use `ipc://` for
+Windows named pipes. Although nanomsg 1.3 also supports `unix://`, its
+`ipc://` scheme retains this named-pipe meaning. In NNG 2, `ipc://` uses AF_UNIX
+sockets and is equivalent to `unix://`. Consequently, a legacy application
+using `ipc://` cannot communicate with an NNG 2 application using the same URL
+on Windows.
+
+To retain the legacy named-pipe behavior, change Windows IPC URLs from
+`ipc://NAME` to `winpipe://NAME`. The `winpipe://` scheme is Windows-only and
+uses the same `\\.\pipe\NAME` named-pipe path as legacy `ipc://NAME`, so it
+can be used to interoperate with legacy applications.
 
 ## Option Functions
 
@@ -429,9 +442,8 @@ with the functions [`nng_listener_set_security_descriptor`] and
 [`nng_stream_listener_set_security_descriptor`].
 
 Security descriptor support is only relevant to Windows,
-and is presently only supported for IPC when Named Pipes are used.
-Planned future changes to switch to UNIX domain sockets may eliminate
-support for security descriptors altogether in NNG.
+and is supported only by the `winpipe://` named-pipe transport. It is not
+available for the AF_UNIX `ipc://` or `unix://` transports.
 
 ## Command Line Argument Parser Changes
 
@@ -443,15 +455,15 @@ See [`nng_args_parse`] for more information.
 
 The Layer 2 special ZeroTier transport has been removed.
 It is possible to use NNG with ZeroTier using TCP/IP, and a future update
-is planned to provided coexistence between ZeroTier & the native stack's TCP/IP using lwIP.
+is planned to provide coexistence between ZeroTier and the native stack's TCP/IP using lwIP.
 
 ## Abstract Autobinding No Longer Supported
 
-As we have removed `NNG_OPT_LOCADDR`, it is no longer possible to meaningfully
-use autobinding with abstract sockets on Linux. This is trivially worked around by using a
-large (say 128-bit) random integer as the name.
+It is no longer possible to use autobinding with abstract sockets on Linux.
+This is trivially worked around by using a large (say 128-bit) random integer
+as the name.
 
-This can be done via using of [`nng_random`] combined with `sprintf`, as the following example demonstrates:
+This can be done by using [`nng_random`] combined with `sprintf`, as the following example demonstrates:
 
 ```c
 char url[256];

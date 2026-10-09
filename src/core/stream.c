@@ -28,12 +28,12 @@ static struct {
 	nng_err (*listener_alloc)(nng_stream_listener **, const nng_url *);
 
 } stream_drivers[] = {
+#ifdef NNG_PLATFORM_POSIX
 	{
 	    .scheme         = "ipc",
 	    .dialer_alloc   = nni_ipc_dialer_alloc,
 	    .listener_alloc = nni_ipc_listener_alloc,
 	},
-#ifdef NNG_PLATFORM_POSIX
 	{
 	    .scheme         = "unix",
 	    .dialer_alloc   = nni_ipc_dialer_alloc,
@@ -41,9 +41,21 @@ static struct {
 	},
 #elif defined(NNG_HAVE_UNIX_SOCKETS)
 	{
+	    .scheme         = "ipc",
+	    .dialer_alloc   = nni_unix_dialer_alloc,
+	    .listener_alloc = nni_unix_listener_alloc,
+	},
+	{
 	    .scheme         = "unix",
 	    .dialer_alloc   = nni_unix_dialer_alloc,
 	    .listener_alloc = nni_unix_listener_alloc,
+	},
+#endif
+#ifdef NNG_PLATFORM_WINDOWS
+	{
+	    .scheme         = "winpipe",
+	    .dialer_alloc   = nni_ipc_dialer_alloc,
+	    .listener_alloc = nni_ipc_listener_alloc,
 	},
 #endif
 #ifdef NNG_HAVE_ABSTRACT_SOCKETS
@@ -203,6 +215,18 @@ void
 nng_stream_dialer_dial(nng_stream_dialer *d, nng_aio *aio)
 {
 	d->sd_dial(d, aio);
+}
+
+nng_err
+nng_stream_dialer_bind(nng_stream_dialer *d, const nng_sockaddr *sa)
+{
+	if ((d == NULL) || (sa == NULL)) {
+		return (NNG_EINVAL);
+	}
+	if (d->sd_bind == NULL) {
+		return (NNG_ENOTSUP);
+	}
+	return (d->sd_bind(d, sa));
 }
 
 nng_err
@@ -531,13 +555,6 @@ nng_stream_dialer_set_string(
 }
 
 nng_err
-nng_stream_dialer_set_addr(
-    nng_stream_dialer *d, const char *n, const nng_sockaddr *v)
-{
-	return (nni_stream_dialer_set(d, n, v, sizeof(*v), NNI_TYPE_SOCKADDR));
-}
-
-nng_err
 nng_stream_dialer_set_tls(nng_stream_dialer *d, nng_tls_config *cfg)
 {
 	return (nni_stream_dialer_set_tls(d, cfg));
@@ -575,14 +592,6 @@ nng_stream_listener_set_string(
 {
 	return (nni_stream_listener_set(
 	    l, n, v, v == NULL ? 0 : strlen(v) + 1, NNI_TYPE_STRING));
-}
-
-nng_err
-nng_stream_listener_set_addr(
-    nng_stream_listener *l, const char *n, const nng_sockaddr *v)
-{
-	return (
-	    nni_stream_listener_set(l, n, v, sizeof(*v), NNI_TYPE_SOCKADDR));
 }
 
 nng_err
