@@ -39,7 +39,7 @@ NNG approach to messages. Likewise there is no `struct nn_cmsghdr` equivalent.
 | `nn_errno`          | None                                         | Errors are returned directly rather than through `errno`.                                             |
 | `nn_socket`         | Various                                      | Use the appropriate protocol constructor, such as `nng_req0_open`.                                    |
 | `nn_close`          | [`nng_socket_close` ]                        |
-| `nn_bind`           | [`nng_listen`], [`nng_listener_create`]      | Allocating a listener with `nng_lister_create` and configuring it offers more capabilities.           |
+| `nn_bind`           | [`nng_listen`], [`nng_listener_create`]      | Allocating a listener with `nng_listener_create` and configuring it offers more capabilities.         |
 | `nn_connect`        | [`nng_dial`], [`nng_dialer_create`]          | Allocating a dialer with `nng_dialer_create` and configuring it offers more capabilities.             |
 | `nn_shutdown`       | [`nng_listener_close`], [`nng_dialer_close`] |
 | `nn_allocmsg`       | [`nng_msg_alloc`]                            | There are significant semantic differences.                                                           |
@@ -123,9 +123,8 @@ There are some exceptions. Be aware that the numeric values are _not_ the same.
 
 ## Local Addresses for Dialing
 
-The ability to specify the source address in the URL, to use when
-using `nn_dial` inside the URL is not present in NNG. The correct
-way to specify the local address is calling [`nng_dialer_bind`] before starting
-the dialer.
+The ability to specify a local source address in a URL passed to `nn_connect`
+is not available in NNG. Instead, create a dialer, call
+[`nng_dialer_bind`], and then start the dialer.
 
 {{#include ../xref.md}}
